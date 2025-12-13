@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { GoogleGenAI } from "@google/genai";
 import { 
   ArrowLeft, 
   Plus, 
@@ -18,8 +17,6 @@ import {
   User,
   MapPin,
   Ruler,
-  Sparkles,
-  Loader2,
   PaintRoller,
   Hammer,
   Utensils,
@@ -564,7 +561,7 @@ const Header = ({ title, onBack }: { title: string, onBack: () => void }) => (
   </div>
 );
 
-const Footer = ({ children }: { children: React.ReactNode }) => (
+const Footer = ({ children }: { children?: React.ReactNode }) => (
   <div className="absolute bottom-0 left-0 right-0 bg-white/90 backdrop-blur-md p-4 border-t border-gray-200 z-50">
     <div className="max-w-xl mx-auto">
       {children}
@@ -572,7 +569,7 @@ const Footer = ({ children }: { children: React.ReactNode }) => (
   </div>
 );
 
-const InputGroup = ({ label, children }: { label: string, children: React.ReactNode }) => (
+const InputGroup = ({ label, children }: { label: string, children?: React.ReactNode }) => (
   <div className="space-y-2">
     <label className="text-xs font-bold text-slate-500 uppercase tracking-wider ml-1">{label}</label>
     {children}
@@ -585,7 +582,6 @@ function ServiceSelector({ onBack, onSelect }: { onBack: () => void, onSelect: (
   const [type, setType] = useState('');
   const [customName, setCustomName] = useState('');
   const [description, setDescription] = useState('');
-  const [isAiLoading, setIsAiLoading] = useState(false);
 
   useEffect(() => {
     if (cat === 'custom') {
@@ -609,34 +605,6 @@ function ServiceSelector({ onBack, onSelect }: { onBack: () => void, onSelect: (
        setDescription('');
     }
   }, [cat, type]);
-
-  const handleAiRewrite = async () => {
-    if (!description.trim()) return;
-    setIsAiLoading(true);
-    try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-      const prompt = `Rewrite the following construction/renovation service description to be highly professional, impressive, and sound like excellent value for money for a client quotation. 
-      - The input might be in English, Hindi, or mixed (Hinglish). 
-      - Translate it to clear, professional English if necessary.
-      - Enhance the vocabulary to be persuasive but precise.
-      - Keep it concise (1-2 sentences maximum).
-      
-      Input Description: "${description}"`;
-
-      const result = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: prompt
-      });
-      if (result.text) {
-        setDescription(result.text.trim());
-      }
-    } catch (error) {
-      console.error("AI Rewrite Error:", error);
-      alert("Could not rewrite text. Please try again.");
-    } finally {
-      setIsAiLoading(false);
-    }
-  };
 
   const isSelectionComplete = cat && type && (cat !== 'custom' || customName);
 
@@ -705,20 +673,6 @@ function ServiceSelector({ onBack, onSelect }: { onBack: () => void, onSelect: (
                   value={description}
                   onChange={e => setDescription(e.target.value)}
                 />
-                <div className="flex justify-end mt-2">
-                  <button
-                    onClick={handleAiRewrite}
-                    disabled={isAiLoading || !description.trim()}
-                    className="flex items-center gap-2 text-xs font-bold text-brand-gold bg-slate-900 px-3 py-2 rounded-lg hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-md active:scale-95"
-                  >
-                    {isAiLoading ? (
-                      <Loader2 size={14} className="animate-spin" />
-                    ) : (
-                      <Sparkles size={14} />
-                    )}
-                    {isAiLoading ? "Rewriting..." : "Rewrite with AI"}
-                  </button>
-                </div>
              </InputGroup>
            </div>
         )}
