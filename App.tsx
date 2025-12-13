@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { GoogleGenAI } from "@google/genai";
 import { 
   ArrowLeft, 
   Plus, 
@@ -22,7 +23,9 @@ import {
   Utensils,
   Monitor,
   Layers,
-  Box
+  Box,
+  Sparkles,
+  Loader2
 } from 'lucide-react';
 import { 
   ActiveService, 
@@ -194,20 +197,21 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-100 flex flex-col items-center sm:py-10 text-slate-800">
+    <div className="min-h-screen bg-gray-50 flex flex-col items-center sm:py-10 text-slate-800">
       <div className="w-full max-w-xl bg-white sm:rounded-3xl shadow-2xl overflow-hidden flex flex-col min-h-screen sm:min-h-[85vh] relative">
         
         {/* GLOBAL HEADER (Except Setup/Print) */}
         {view !== 'setup' && (
-          <div className="px-6 py-4 bg-white/80 backdrop-blur-md border-b border-gray-100 sticky top-0 z-20 flex items-center justify-between">
-            <img src={LOGO_URL} alt="Renowix" className="h-10 object-contain" />
-            <div className="flex items-center gap-2">
-              <span className="text-[10px] uppercase font-bold tracking-widest text-gray-400">Surveyor Pro</span>
+          <div className="px-4 py-2 bg-white border-b border-gray-100 sticky top-0 z-20 flex items-center justify-between shadow-sm">
+            <img src={LOGO_URL} alt="Renowix" className="h-12 object-contain" />
+            <div className="flex items-center gap-1">
+               <span className="text-sm font-sans font-bold text-slate-900">Surveyor</span>
+               <span className="text-sm font-sans font-bold text-yellow-600">Pro</span>
             </div>
           </div>
         )}
 
-        <div className="flex-1 overflow-y-auto pb-24 no-scrollbar">
+        <div className="flex-1 overflow-y-auto pb-40 no-scrollbar bg-slate-50/50">
           {view === 'setup' && (
             <div className="flex flex-col items-center justify-center h-full p-8 bg-gradient-to-b from-slate-900 to-slate-850 text-white text-center">
               <div className="mb-8 p-4 bg-white rounded-2xl shadow-lg">
@@ -421,19 +425,15 @@ export default function App() {
                 </div>
 
                 {services.length === 0 ? (
-                  <div className="text-center py-12 border-2 border-dashed border-gray-200 rounded-2xl bg-gray-50/50">
-                    <div className="bg-white p-4 rounded-full inline-block shadow-sm mb-3">
-                      <Ruler size={24} className="text-gray-400" />
-                    </div>
-                    <p className="text-gray-500 font-medium">No measurements yet</p>
-                    <p className="text-sm text-gray-400 mt-1">Add a service category to begin</p>
+                  <div className="text-center py-6">
+                     <p className="text-gray-400 text-sm mb-2">No services added yet.</p>
                   </div>
                 ) : (
                   services.map((s, sIdx) => (
-                    <div key={sIdx} className="bg-white border border-gray-100 rounded-2xl overflow-hidden shadow-soft">
-                      <div className="bg-gray-50/80 p-4 border-b border-gray-100 flex justify-between items-center">
+                    <div key={sIdx} className="bg-white border-l-4 border-l-brand-gold rounded-xl overflow-hidden shadow-card mb-4">
+                      <div className="bg-white p-4 border-b border-gray-100 flex justify-between items-center">
                         <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 rounded-lg bg-white flex items-center justify-center shadow-sm border border-gray-100 text-brand-gold">
+                          <div className="w-10 h-10 rounded-lg bg-gray-50 flex items-center justify-center border border-gray-100 text-brand-black">
                              <ServiceIcon categoryId={s.categoryId} typeId={s.typeId} name={s.name} />
                           </div>
                           <div>
@@ -441,14 +441,14 @@ export default function App() {
                             <p className="text-xs text-gray-500">{s.items.reduce((a,b)=>a+b.netArea,0).toFixed(2)} {s.unit}</p>
                           </div>
                         </div>
-                        <span className="font-bold text-slate-900 bg-white px-3 py-1 rounded-lg border border-gray-100 text-sm shadow-sm">
+                        <span className="font-bold text-slate-900 bg-gray-50 px-3 py-1 rounded-lg border border-gray-200 text-sm">
                           ₹ {Math.round(s.items.reduce((a,b)=>a+b.cost,0)).toLocaleString()}
                         </span>
                       </div>
                       
                       <div className="divide-y divide-gray-50">
                         {s.items.map((item, iIdx) => (
-                          <div key={item.id} className="p-4 hover:bg-gray-50 transition-colors flex justify-between items-center group">
+                          <div key={item.id} className="p-4 hover:bg-gray-50 transition-colors flex justify-between items-center">
                              <div>
                                <p className="font-semibold text-slate-700 text-sm">{item.name}</p>
                                <p className="text-xs text-gray-400 mt-1 flex items-center gap-1">
@@ -461,11 +461,11 @@ export default function App() {
                                 <span className="font-bold text-slate-800 text-sm">
                                   ₹ {Math.round(item.cost).toLocaleString()}
                                 </span>
-                                <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                  <button onClick={() => editItem(sIdx, iIdx)} className="p-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100">
+                                <div className="flex gap-2">
+                                  <button onClick={() => editItem(sIdx, iIdx)} className="p-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 border border-blue-100">
                                     <Edit2 size={14} />
                                   </button>
-                                  <button onClick={() => deleteItem(sIdx, iIdx)} className="p-2 bg-red-50 text-red-600 rounded-lg hover:bg-red-100">
+                                  <button onClick={() => deleteItem(sIdx, iIdx)} className="p-2 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 border border-red-100">
                                     <Trash2 size={14} />
                                   </button>
                                 </div>
@@ -491,11 +491,9 @@ export default function App() {
 
                 <button 
                   onClick={() => setView('service-select')}
-                  className="w-full py-5 border-2 border-dashed border-gray-300 text-gray-400 rounded-2xl font-bold flex flex-col items-center justify-center gap-2 hover:border-brand-gold hover:text-brand-gold hover:bg-yellow-50/50 transition-all group"
+                  className="w-full py-4 border-2 border-dashed border-gray-300 text-gray-400 rounded-2xl font-bold flex flex-row items-center justify-center gap-2 hover:border-brand-gold hover:text-brand-gold hover:bg-yellow-50/50 transition-all group"
                 >
-                  <div className="p-3 bg-gray-100 rounded-full text-gray-400 group-hover:bg-brand-gold group-hover:text-white transition-colors">
-                     <Plus size={24} />
-                  </div>
+                  <Plus size={20} />
                   Add New Service Category
                 </button>
               </div>
@@ -562,7 +560,7 @@ const Header = ({ title, onBack }: { title: string, onBack: () => void }) => (
 );
 
 const Footer = ({ children }: { children?: React.ReactNode }) => (
-  <div className="absolute bottom-0 left-0 right-0 bg-white/90 backdrop-blur-md p-4 border-t border-gray-200 z-50">
+  <div className="fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-md p-4 border-t border-gray-200 z-[100] shadow-lg">
     <div className="max-w-xl mx-auto">
       {children}
     </div>
@@ -582,6 +580,7 @@ function ServiceSelector({ onBack, onSelect }: { onBack: () => void, onSelect: (
   const [type, setType] = useState('');
   const [customName, setCustomName] = useState('');
   const [description, setDescription] = useState('');
+  const [isAiLoading, setIsAiLoading] = useState(false);
 
   useEffect(() => {
     if (cat === 'custom') {
@@ -600,11 +599,34 @@ function ServiceSelector({ onBack, onSelect }: { onBack: () => void, onSelect: (
           setDescription(typeItem.desc);
        }
     } else if (cat === 'custom' && !description) {
-       // Only reset if empty to allow switching back and forth without losing custom typing immediately
-       // but typically starting fresh custom means empty desc.
        setDescription('');
     }
   }, [cat, type]);
+
+  const handleAiRewrite = async () => {
+    if (!description.trim()) return;
+    setIsAiLoading(true);
+    try {
+      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      const prompt = `Rewrite the following renovation service description for a client quote. 
+      Make it highly professional, value-for-money, and easy to scan. You can use bullet points. 
+      Keep it strictly within the scope of the original description. 
+      Input: "${description}"`;
+
+      const result = await ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: prompt
+      });
+      if (result.text) {
+        setDescription(result.text.trim());
+      }
+    } catch (error) {
+      console.error("AI Rewrite Error:", error);
+      alert("Could not rewrite text. Please try again.");
+    } finally {
+      setIsAiLoading(false);
+    }
+  };
 
   const isSelectionComplete = cat && type && (cat !== 'custom' || customName);
 
@@ -668,11 +690,25 @@ function ServiceSelector({ onBack, onSelect }: { onBack: () => void, onSelect: (
              <InputGroup label="Service Description (Editable)">
                 <textarea 
                   placeholder="Describe scope of work (English or Hindi)..."
-                  rows={3}
+                  rows={4}
                   className="w-full p-3 bg-white border border-gray-200 rounded-xl focus:border-brand-gold outline-none resize-none"
                   value={description}
                   onChange={e => setDescription(e.target.value)}
                 />
+                 <div className="flex justify-end mt-2">
+                  <button
+                    onClick={handleAiRewrite}
+                    disabled={isAiLoading || !description.trim()}
+                    className="flex items-center gap-2 text-xs font-bold text-brand-gold bg-slate-900 px-3 py-2 rounded-lg hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-md active:scale-95"
+                  >
+                    {isAiLoading ? (
+                      <Loader2 size={14} className="animate-spin" />
+                    ) : (
+                      <Sparkles size={14} />
+                    )}
+                    {isAiLoading ? "Rewriting..." : "Professional Rewrite (AI)"}
+                  </button>
+                </div>
              </InputGroup>
            </div>
         )}
@@ -759,7 +795,7 @@ function MeasurementForm({ serviceContext, editingItem, onBack, onSave }: {
     <div className="p-6">
       <Header title="Take Measurement" onBack={onBack} />
       
-      <div className="mt-2 pb-24 space-y-6">
+      <div className="mt-2 pb-56 space-y-6">
         <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 flex items-start gap-3">
           <div className="p-2 bg-white rounded-lg shadow-sm text-brand-gold">
             <ServiceIcon categoryId={serviceContext.categoryId || ''} typeId={serviceContext.typeId || ''} name={serviceContext.name || 'C'} />
@@ -930,10 +966,10 @@ function MeasurementForm({ serviceContext, editingItem, onBack, onSave }: {
                     {deductions.map((d, idx) => (
                       <div key={d.id} className="flex gap-2 items-center bg-gray-50 p-2 rounded-xl">
                          <span className="text-xs font-bold w-12 text-slate-600 pl-1">{d.type}</span>
-                         <input type="number" placeholder="Area" className="flex-1 p-2 bg-white border border-gray-200 rounded-lg text-sm" value={d.area} onChange={e => {
+                         <input type="number" placeholder="Area" className="flex-1 p-1 bg-white border border-gray-200 rounded-lg text-sm" value={d.area} onChange={e => {
                            const newD = [...deductions]; newD[idx].area = parseFloat(e.target.value); setDeductions(newD);
                          }} />
-                         <input type="number" placeholder="Qty" className="w-16 p-2 bg-white border border-gray-200 rounded-lg text-sm text-center" value={d.qty} onChange={e => {
+                         <input type="number" placeholder="Qty" className="w-12 p-1 bg-white border border-gray-200 rounded-lg text-sm text-center" value={d.qty} onChange={e => {
                            const newD = [...deductions]; newD[idx].qty = parseFloat(e.target.value); setDeductions(newD);
                          }} />
                          <button onClick={() => { const newD = [...deductions]; newD.splice(idx, 1); setDeductions(newD); }} className="text-gray-400 hover:text-red-500 p-1"><X size={16} /></button>
@@ -944,24 +980,21 @@ function MeasurementForm({ serviceContext, editingItem, onBack, onSave }: {
           </div>
         )}
 
-        {/* Live Calculation Footer for Form */}
-        <div className="fixed bottom-[80px] left-0 right-0 max-w-xl mx-auto px-4 pointer-events-none">
-           <div className="bg-slate-900 text-white p-4 rounded-2xl shadow-xl flex justify-between items-center pointer-events-auto">
-              <div>
-                <p className="text-[10px] uppercase text-gray-400 tracking-wider">Net Quantity</p>
-                <p className="font-bold text-lg">{netArea.toFixed(2)} <span className="text-xs font-normal text-gray-400">{serviceContext.unit}</span></p>
-              </div>
-              <div className="h-8 w-px bg-gray-700 mx-2"></div>
-              <div className="text-right">
-                 <p className="text-[10px] uppercase text-gray-400 tracking-wider">Amount</p>
-                 <p className="font-bold text-2xl text-brand-gold">₹ {Math.round(estimatedCost).toLocaleString()}</p>
-              </div>
-           </div>
-        </div>
-
       </div>
 
+      {/* Floating Action Footer containing Live Calc and Save Button */}
       <Footer>
+         <div className="mb-4 bg-slate-900 text-white p-4 rounded-2xl shadow-xl flex justify-between items-center pointer-events-auto">
+            <div>
+              <p className="text-[10px] uppercase text-gray-400 tracking-wider">Net Quantity</p>
+              <p className="font-bold text-lg">{netArea.toFixed(2)} <span className="text-xs font-normal text-gray-400">{serviceContext.unit}</span></p>
+            </div>
+            <div className="h-8 w-px bg-gray-700 mx-2"></div>
+            <div className="text-right">
+               <p className="text-[10px] uppercase text-gray-400 tracking-wider">Amount</p>
+               <p className="font-bold text-2xl text-brand-gold">₹ {Math.round(estimatedCost).toLocaleString()}</p>
+            </div>
+         </div>
         <button 
           onClick={() => {
             if(!name && !serviceContext.isCustom) return alert("Enter Name");
@@ -994,7 +1027,7 @@ function QuoteView({ client, services, terms: initialTerms, onBack }: { client: 
   const date = useMemo(() => new Date().toLocaleDateString(), []);
 
   return (
-    <div className="bg-gray-200 min-h-screen w-full flex flex-col items-center sm:p-8">
+    <div className="bg-gray-200 min-h-screen w-full flex flex-col items-center sm:p-8 print:p-0 print:m-0 print:bg-white print:block">
       {/* Print Controls */}
       <div className="w-full max-w-[210mm] mb-6 flex justify-between items-center no-print px-4 sm:px-0 mt-4 sm:mt-0">
          <button onClick={onBack} className="flex items-center gap-2 text-slate-600 bg-white px-4 py-2 rounded-lg shadow-sm hover:bg-gray-50 font-medium"><ArrowLeft size={18}/> Back to Edit</button>
@@ -1002,77 +1035,77 @@ function QuoteView({ client, services, terms: initialTerms, onBack }: { client: 
       </div>
 
       {/* A4 Paper Simulation */}
-      <div className="w-full max-w-[210mm] bg-white min-h-[297mm] p-12 shadow-2xl print:shadow-none print:m-0 print:w-full print:p-8 text-slate-800">
+      <div className="w-full max-w-[210mm] bg-white min-h-[297mm] p-12 shadow-2xl print:shadow-none print:m-0 print:w-full print:max-w-none print:p-6 text-slate-800">
         
         {/* Header */}
-        <div className="flex justify-between items-start border-b border-gray-100 pb-8 mb-8">
+        <div className="flex justify-between items-start border-b border-gray-100 pb-8 mb-8 print:pb-4 print:mb-4">
           <div className="flex gap-5 items-center">
-            <img src={LOGO_URL} className="h-16 w-auto object-contain" alt="Renowix Logo" />
+            <img src={LOGO_URL} className="h-16 w-auto object-contain print:h-12" alt="Renowix Logo" />
             <div>
-              <h1 className="text-xl font-bold text-slate-900">Renowix Renovations</h1>
-              <div className="text-xs text-gray-500 mt-1 space-y-0.5">
+              <h1 className="text-xl font-bold text-slate-900 print:text-lg">Renowix Renovations</h1>
+              <div className="text-xs text-gray-500 mt-1 space-y-0.5 print:text-[10px]">
                 <p>C-32, Sector 51, Noida, UP 201301</p>
                 <p>info@renowix.in | +91 92114 29635</p>
               </div>
             </div>
           </div>
           <div className="text-right">
-             <h2 className="text-4xl font-display font-bold text-gray-100 uppercase tracking-tighter">Quote</h2>
+             <h2 className="text-4xl font-display font-bold text-gray-100 uppercase tracking-tighter print:text-2xl">Quote</h2>
              <div className="mt-2">
-               <p className="font-bold text-slate-700">#{quoteId}</p>
-               <p className="text-sm text-gray-500">{date}</p>
+               <p className="font-bold text-slate-700 print:text-sm">#{quoteId}</p>
+               <p className="text-sm text-gray-500 print:text-xs">{date}</p>
              </div>
           </div>
         </div>
 
         {/* Addresses */}
-        <div className="flex gap-12 mb-12">
+        <div className="flex gap-12 mb-12 print:mb-6">
            <div className="flex-1">
-             <h3 className="text-[10px] uppercase font-bold text-gray-400 tracking-widest mb-3">Bill To</h3>
-             <p className="font-bold text-lg text-slate-900">{client.name}</p>
-             <p className="text-slate-600 whitespace-pre-line text-sm mt-1 leading-relaxed">{client.address}</p>
+             <h3 className="text-[10px] uppercase font-bold text-gray-400 tracking-widest mb-3 print:mb-1">Bill To</h3>
+             <p className="font-bold text-lg text-slate-900 print:text-sm">{client.name}</p>
+             <p className="text-slate-600 whitespace-pre-line text-sm mt-1 leading-relaxed print:text-xs">{client.address}</p>
            </div>
            <div className="w-px bg-gray-100"></div>
            <div className="flex-1">
-             <h3 className="text-[10px] uppercase font-bold text-gray-400 tracking-widest mb-3">Site Details</h3>
-             <p className="font-bold text-lg text-slate-900">{client.name}</p>
-             <p className="text-slate-600 whitespace-pre-line text-sm mt-1 leading-relaxed">{client.address}</p>
+             <h3 className="text-[10px] uppercase font-bold text-gray-400 tracking-widest mb-3 print:mb-1">Site Details</h3>
+             <p className="font-bold text-lg text-slate-900 print:text-sm">{client.name}</p>
+             <p className="text-slate-600 whitespace-pre-line text-sm mt-1 leading-relaxed print:text-xs">{client.address}</p>
            </div>
         </div>
 
         {/* Table */}
-        <table className="w-full text-sm mb-12">
+        <table className="w-full text-sm mb-12 print:mb-6 print:text-xs">
            <thead>
              <tr className="border-b-2 border-slate-900">
-               <th className="py-3 text-left pl-2 font-bold text-slate-900 w-12">#</th>
-               <th className="py-3 text-left font-bold text-slate-900">Description</th>
-               <th className="py-3 text-right font-bold text-slate-900 w-24">Qty</th>
-               <th className="py-3 text-right font-bold text-slate-900 w-24">Rate</th>
-               <th className="py-3 text-right pr-2 font-bold text-slate-900 w-32">Amount</th>
+               <th className="py-3 text-left pl-2 font-bold text-slate-900 w-12 print:py-2">#</th>
+               <th className="py-3 text-left font-bold text-slate-900 print:py-2">Description</th>
+               <th className="py-3 text-right font-bold text-slate-900 w-24 print:py-2">Qty</th>
+               <th className="py-3 text-right font-bold text-slate-900 w-24 print:py-2">Rate</th>
+               <th className="py-3 text-right pr-2 font-bold text-slate-900 w-32 print:py-2">Amount</th>
              </tr>
            </thead>
            <tbody className="divide-y divide-gray-100">
              {services.map((s, idx) => (
                <React.Fragment key={idx}>
                  <tr className="group break-inside-avoid">
-                   <td className="py-4 pl-2 font-bold align-top text-slate-400">{idx + 1}</td>
-                   <td className="py-4 align-top pr-4">
-                     <p className="font-bold text-slate-800 text-base mb-1">{s.name}</p>
-                     <p className="text-xs text-gray-500 leading-relaxed mb-2">{s.desc}</p>
+                   <td className="py-4 pl-2 font-bold align-top text-slate-400 print:py-2">{idx + 1}</td>
+                   <td className="py-4 align-top pr-4 print:py-2">
+                     <p className="font-bold text-slate-800 text-base mb-1 print:text-sm">{s.name}</p>
+                     <p className="text-xs text-gray-500 leading-relaxed mb-2 whitespace-pre-line">{s.desc}</p>
                      {s.items.length > 0 && (
-                        <div className="bg-gray-50 p-2 rounded text-xs text-gray-600 inline-block">
+                        <div className="bg-gray-50 p-2 rounded text-xs text-gray-600 inline-block print:p-1 print:bg-transparent print:text-[10px]">
                           <span className="font-semibold text-gray-400 uppercase text-[10px] mr-2">Locations:</span>
                           {s.items.map(i => i.name).join(', ')}
                         </div>
                      )}
                    </td>
-                   <td className="py-4 text-right align-top font-medium text-slate-600">
+                   <td className="py-4 text-right align-top font-medium text-slate-600 print:py-2">
                      {s.items.reduce((a,b)=>a+b.netArea,0).toFixed(2)} <span className="text-[10px] text-gray-400 uppercase">{s.unit}</span>
                    </td>
-                   <td className="py-4 text-right align-top text-slate-600">
+                   <td className="py-4 text-right align-top text-slate-600 print:py-2">
                      {s.items[0].rate}
                    </td>
-                   <td className="py-4 text-right pr-2 align-top font-bold text-slate-900">
+                   <td className="py-4 text-right pr-2 align-top font-bold text-slate-900 print:py-2">
                      {Math.round(s.items.reduce((a,b)=>a+b.cost,0)).toLocaleString()}
                    </td>
                  </tr>
@@ -1082,15 +1115,15 @@ function QuoteView({ client, services, terms: initialTerms, onBack }: { client: 
         </table>
 
         {/* Totals */}
-        <div className="flex justify-end mb-16 break-inside-avoid">
+        <div className="flex justify-end mb-16 break-inside-avoid print:mb-8">
            <div className="w-64">
-             <div className="flex justify-between text-slate-500 py-2 border-b border-gray-100">
+             <div className="flex justify-between text-slate-500 py-2 border-b border-gray-100 print:py-1 print:text-xs">
                <span>Sub Total</span>
                <span>{Math.round(total).toLocaleString()}</span>
              </div>
-             <div className="flex justify-between items-center py-3 mt-2">
-               <span className="font-bold text-lg text-slate-900">Total</span>
-               <span className="font-bold text-2xl text-brand-black">₹ {Math.round(total).toLocaleString()}</span>
+             <div className="flex justify-between items-center py-3 mt-2 print:py-2">
+               <span className="font-bold text-lg text-slate-900 print:text-sm">Total</span>
+               <span className="font-bold text-2xl text-brand-black print:text-xl">₹ {Math.round(total).toLocaleString()}</span>
              </div>
              <div className="h-1 w-full bg-brand-gold mt-1 rounded-full"></div>
            </div>
@@ -1098,10 +1131,11 @@ function QuoteView({ client, services, terms: initialTerms, onBack }: { client: 
 
         {/* Terms */}
         <div className="break-inside-avoid">
-           <h4 className="font-bold text-xs uppercase text-gray-400 tracking-widest mb-3">Terms & Conditions</h4>
-           <div className="p-4 bg-gray-50 rounded-xl border border-gray-100">
+           <h4 className="font-bold text-xs uppercase text-gray-400 tracking-widest mb-3 print:mb-1">Terms & Conditions</h4>
+           <div className="p-4 bg-gray-50 rounded-xl border border-gray-100 print:bg-transparent print:p-0 print:border-none">
              <textarea 
-               className="w-full text-xs text-slate-600 bg-transparent border-none p-0 resize-none h-32 focus:ring-0 whitespace-pre-line leading-relaxed font-sans"
+               className="w-full text-xs text-slate-600 bg-transparent border-none p-0 resize-none focus:ring-0 whitespace-pre-line leading-relaxed font-sans"
+               rows={12}
                value={terms}
                onChange={e => setTerms(e.target.value)}
              />
@@ -1109,7 +1143,7 @@ function QuoteView({ client, services, terms: initialTerms, onBack }: { client: 
         </div>
 
         {/* Signature */}
-        <div className="mt-20 flex justify-end break-inside-avoid">
+        <div className="mt-20 flex justify-end break-inside-avoid print:mt-12">
            <div className="text-center">
              <div className="w-48 border-b border-gray-300 mb-2"></div>
              <p className="text-xs font-bold text-gray-400 uppercase tracking-wider">Authorized Signature</p>
