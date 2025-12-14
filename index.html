@@ -4,8 +4,14 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Renowix Surveyor Pro</title>
+
+    <!-- Tailwind -->
     <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- Fonts -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+    <!-- Tailwind Config -->
     <script>
       tailwind.config = {
         theme: {
@@ -16,22 +22,24 @@
             },
             colors: {
               slate: {
-                850: '#172033', // Custom deep slate
+                850: '#172033',
               },
               brand: {
-                gold: '#EAB308', // Renowix Gold
-                goldLight: '#FEF08A', 
+                gold: '#EAB308',
+                goldLight: '#FEF08A',
                 black: '#1e293b',
               }
             },
             boxShadow: {
-              'soft': '0 4px 20px -2px rgba(0, 0, 0, 0.05)',
-              'card': '0 0 0 1px rgba(0,0,0,0.03), 0 2px 8px rgba(0,0,0,0.04)',
+              soft: '0 4px 20px -2px rgba(0, 0, 0, 0.05)',
+              card: '0 0 0 1px rgba(0,0,0,0.03), 0 2px 8px rgba(0,0,0,0.04)',
             }
           }
         }
       }
     </script>
+
+    <!-- Print & Scroll Styles -->
     <style>
       @media print {
         .no-print { display: none !important; }
@@ -39,8 +47,7 @@
         body { background: white; -webkit-print-color-adjust: exact; }
       }
       .print-only { display: none; }
-      
-      /* Hide scrollbar for clean UI */
+
       .no-scrollbar::-webkit-scrollbar {
         display: none;
       }
@@ -49,21 +56,50 @@
         scrollbar-width: none;
       }
     </style>
-  <script type="importmap">
-{
-  "imports": {
-    "lucide-react": "https://esm.sh/lucide-react@^0.561.0",
-    "react/": "https://esm.sh/react@^19.2.3/",
-    "react": "https://esm.sh/react@^19.2.3",
-    "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
-    "@google/genai": "https://esm.sh/@google/genai@^1.33.0"
-  }
-}
-</script>
-<link rel="stylesheet" href="./index.css">
-</head>
+
+    <!-- Import Map (React, Lucide, GenAI) -->
+    <script type="importmap">
+    {
+      "imports": {
+        "lucide-react": "https://esm.sh/lucide-react@^0.561.0",
+        "react/": "https://esm.sh/react@^19.2.3/",
+        "react": "https://esm.sh/react@^19.2.3",
+        "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
+        "@google/genai": "https://esm.sh/@google/genai@^1.33.0"
+      }
+    }
+    </script>
+  </head>
+
   <body class="bg-gray-100 text-slate-800 antialiased selection:bg-brand-gold selection:text-white">
     <div id="root"></div>
-  <script type="module" src="./index.tsx"></script>
-</body>
+
+    <!-- 🔥 FIREBASE SETUP (WEB SDK - MODULE) -->
+    <script type="module">
+      import { initializeApp } from "https://www.gstatic.com/firebasejs/12.6.0/firebase-app.js";
+      import { getAuth } from "https://www.gstatic.com/firebasejs/12.6.0/firebase-auth.js";
+      import { getFirestore } from "https://www.gstatic.com/firebasejs/12.6.0/firebase-firestore.js";
+      import { getStorage } from "https://www.gstatic.com/firebasejs/12.6.0/firebase-storage.js";
+
+      const firebaseConfig = {
+        apiKey: "AIzaSyBBn_lrDAWOt8WpfSivR3L83g5HVTZRatA",
+        authDomain: "renowix-surveyor-pro.firebaseapp.com",
+        projectId: "renowix-surveyor-pro",
+        storageBucket: "renowix-surveyor-pro.appspot.com",
+        messagingSenderId: "48954158672",
+        appId: "1:48954158672:web:40e53762b2db835c456b55"
+      };
+
+      // Initialize Firebase
+      const app = initializeApp(firebaseConfig);
+
+      // Services (global access)
+      window.firebaseApp = app;
+      window.firebaseAuth = getAuth(app);
+      window.firebaseDB = getFirestore(app);
+      window.firebaseStorage = getStorage(app);
+
+      console.log("🔥 Firebase initialized successfully");
+    </script>
+  </body>
 </html>
