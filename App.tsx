@@ -27,7 +27,8 @@ import {
   Box,
   Sparkles,
   Loader2,
-  AlertCircle
+  AlertCircle,
+  Info
 } from 'lucide-react';
 import { 
   ActiveService, 
@@ -496,11 +497,13 @@ function ServiceSelector({ onBack, onSelect }: { onBack: () => void, onSelect: (
     setIsAiLoading(true);
     setAiError(null);
     try {
-      if (!process.env.API_KEY) {
-        throw new Error("API Key is missing. Please check your Netlify environment variables.");
+      // Robust check for API key
+      const key = process.env.API_KEY;
+      if (!key || key === "" || key === "undefined") {
+        throw new Error("Missing API_KEY. On Netlify: 1. Go to Site Settings > Env Variables. 2. Verify Key is 'API_KEY'. 3. Go to Deploys > Trigger Deploy > 'Clear cache and deploy site'.");
       }
 
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      const ai = new GoogleGenAI({ apiKey: key });
       const prompt = `You are a professional interior design and renovation consultant. Rewrite this service description to be highly professional, persuasive, and clear.
       - Use a professional tone.
       - Ensure it sounds like great value for money.
@@ -517,11 +520,11 @@ function ServiceSelector({ onBack, onSelect }: { onBack: () => void, onSelect: (
       if (response.text) {
         setDescription(response.text.trim());
       } else {
-        throw new Error("No response from AI.");
+        throw new Error("AI produced an empty response.");
       }
     } catch (e: any) { 
       console.error("AI Error:", e);
-      setAiError(e.message || "Failed to rewrite. Check API configuration.");
+      setAiError(e.message || "Failed to rewrite. Check your internet or API config.");
     } finally { 
       setIsAiLoading(false); 
     }
@@ -556,18 +559,21 @@ function ServiceSelector({ onBack, onSelect }: { onBack: () => void, onSelect: (
               <textarea rows={6} className="w-full p-3 bg-white border border-gray-200 rounded-xl outline-none resize-none text-sm" value={description} onChange={e => setDescription(e.target.value)} />
               
               {aiError && (
-                <div className="mt-2 p-2 bg-red-50 text-red-600 text-xs rounded-lg flex items-center gap-2 border border-red-100">
-                  <AlertCircle size={14} />
-                  <span>{aiError}</span>
+                <div className="mt-3 p-3 bg-red-50 text-red-700 text-xs rounded-xl flex flex-col gap-2 border border-red-100 shadow-sm">
+                  <div className="flex items-center gap-2 font-bold">
+                    <AlertCircle size={14} />
+                    <span>Configuration Required</span>
+                  </div>
+                  <p className="leading-relaxed opacity-90">{aiError}</p>
                 </div>
               )}
 
               <button 
                 onClick={handleAiRewrite} 
                 disabled={isAiLoading} 
-                className="mt-2 w-full bg-slate-900 text-white p-3 rounded-lg text-xs font-bold flex items-center justify-center gap-2 hover:bg-slate-800 transition-colors disabled:bg-slate-400"
+                className="mt-3 w-full bg-slate-900 text-white p-4 rounded-xl text-xs font-bold flex items-center justify-center gap-2 hover:bg-slate-800 transition-colors disabled:bg-slate-400 shadow-md"
               >
-                {isAiLoading ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} className="text-brand-gold" />} 
+                {isAiLoading ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} className="text-brand-gold" />} 
                 {isAiLoading ? 'Analyzing...' : 'Professional AI Rewrite'}
               </button>
             </InputGroup>
