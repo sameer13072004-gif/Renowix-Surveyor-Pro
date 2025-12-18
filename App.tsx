@@ -27,8 +27,9 @@ import {
   Box,
   Sparkles,
   Loader2,
-  AlertCircle,
-  Info
+  Table as TableIcon,
+  Ruler as RulerIcon,
+  Download
 } from 'lucide-react';
 import { 
   ActiveService, 
@@ -39,6 +40,7 @@ import {
   ServiceTypeDef, 
   Wall, 
   CeilingSection, 
+  CabinetSection,
   Deduction 
 } from './types';
 import { SERVICE_DATA, DEFAULT_TERMS } from './constants';
@@ -158,18 +160,6 @@ export default function App() {
     alert("Project saved to History!");
   };
 
-  const exportCSV = () => {
-    const project: Project = {
-      id: "current",
-      date: new Date().toLocaleString(),
-      client,
-      services,
-      terms
-    };
-    const csv = generateCSV(project);
-    downloadCSV(csv, `Renowix_Report_${client.name.replace(/\s/g, '_')}.csv`);
-  };
-
   if (view === 'quote') {
     return (
       <QuoteView 
@@ -181,23 +171,33 @@ export default function App() {
     );
   }
 
+  if (view === 'measurement-sheet') {
+    return (
+      <MeasurementSheetView 
+        client={client} 
+        services={services} 
+        onBack={() => setView('dashboard')} 
+      />
+    );
+  }
+
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col items-center sm:py-6 text-slate-800">
+    <div className="min-h-screen bg-slate-50 flex flex-col items-center sm:py-6 text-slate-800 font-sans">
       <div className="w-full max-w-xl bg-white sm:rounded-3xl shadow-2xl overflow-hidden flex flex-col min-h-screen sm:min-h-[85vh] relative">
         
         {view !== 'setup' && (
           <div className="px-4 py-2 bg-white border-b border-gray-100 sticky top-0 z-50 flex items-center justify-between shadow-sm">
             <img src={LOGO_URL} alt="Renowix" className="h-10 w-auto object-contain" />
             <div className="flex items-center gap-1">
-               <span className="text-sm font-sans font-bold text-slate-900">Surveyor</span>
-               <span className="text-sm font-sans font-bold text-yellow-500">Pro</span>
+               <span className="text-sm font-bold text-slate-900">Surveyor</span>
+               <span className="text-sm font-bold text-yellow-500">Pro</span>
             </div>
           </div>
         )}
 
         <div className="flex-1 overflow-y-auto no-scrollbar bg-slate-50/50">
           {view === 'setup' && (
-            <div className="flex flex-col items-center justify-center h-full p-8 bg-gradient-to-b from-slate-900 to-slate-850 text-white text-center">
+            <div className="flex flex-col items-center justify-center min-h-full p-8 bg-slate-900 text-white text-center">
               <div className="mb-8 p-4 bg-white rounded-2xl shadow-lg">
                 <img src={LOGO_URL} alt="Renowix" className="h-12" />
               </div>
@@ -353,7 +353,7 @@ export default function App() {
           )}
 
           {view === 'dashboard' && (
-            <div className="p-4 sm:p-6 pb-40">
+            <div className="p-4 sm:p-6 pb-44">
               <Header title="Project Dashboard" onBack={() => setView('client-details')} />
               
               <div className="mt-4 bg-gradient-to-br from-slate-900 to-slate-800 text-white rounded-2xl p-6 shadow-xl relative overflow-hidden">
@@ -412,7 +412,7 @@ export default function App() {
                         </div>
                       ))}
                     </div>
-                    <button onClick={() => { setTempService({...s}); setEditingItemIndex(null); setView('measure'); }} className="w-full py-2 bg-gray-50 text-[10px] font-bold text-slate-500 border-t border-gray-100 uppercase tracking-widest">+ Add Room</button>
+                    <button onClick={() => { setTempService({...s}); setEditingItemIndex(null); setView('measure'); }} className="w-full py-2 bg-gray-50 text-[10px] font-bold text-slate-500 border-t border-gray-100 uppercase tracking-widest">+ Add Room/Section</button>
                   </div>
                 ))}
 
@@ -422,12 +422,32 @@ export default function App() {
               </div>
 
               <Footer>
-                <div className="flex gap-2 w-full">
-                  <button onClick={saveProject} className="p-4 bg-white border border-gray-200 text-slate-600 rounded-xl"><Save size={20} /></button>
-                  <button onClick={exportCSV} className="p-4 bg-white border border-gray-200 text-slate-600 rounded-xl"><FileText size={20} /></button>
-                  <button onClick={() => setView('quote')} className="flex-1 bg-slate-900 text-white py-4 rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg">
-                    <CheckCircle size={18} className="text-brand-gold" /> Generate Quote
-                  </button>
+                <div className="flex gap-2 w-full items-stretch h-14">
+                   <button 
+                    onClick={() => setView('measurement-sheet')} 
+                    className="flex-1 bg-white border border-slate-200 text-slate-700 rounded-xl flex flex-col items-center justify-center gap-1 hover:bg-slate-50 transition-colors shadow-sm"
+                    title="View Measurement Sheet"
+                   >
+                      <RulerIcon size={20} className="text-slate-400" />
+                      <span className="text-[10px] font-bold uppercase tracking-tighter">Sheet</span>
+                   </button>
+
+                   <button 
+                    onClick={saveProject} 
+                    className="flex-1 bg-white border border-slate-200 text-slate-600 rounded-xl flex flex-col items-center justify-center gap-1 hover:bg-slate-50 transition-colors shadow-sm"
+                    title="Save History"
+                   >
+                      <Save size={20} />
+                      <span className="text-[10px] font-bold uppercase tracking-tighter">Save</span>
+                   </button>
+                   
+                   <button 
+                    onClick={() => setView('quote')} 
+                    className="flex-[2] bg-slate-900 text-white rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg hover:bg-slate-800 transition-all active:scale-[0.98]"
+                   >
+                      <CheckCircle size={20} className="text-brand-gold" />
+                      <span className="text-sm">Generate Quote</span>
+                   </button>
                 </div>
               </Footer>
             </div>
@@ -482,7 +502,6 @@ function ServiceSelector({ onBack, onSelect }: { onBack: () => void, onSelect: (
   const [customName, setCustomName] = useState('');
   const [description, setDescription] = useState('');
   const [isAiLoading, setIsAiLoading] = useState(false);
-  const [aiError, setAiError] = useState<string | null>(null);
 
   useEffect(() => { setType(cat === 'custom' ? 'custom_item' : ''); }, [cat]);
   useEffect(() => {
@@ -495,39 +514,21 @@ function ServiceSelector({ onBack, onSelect }: { onBack: () => void, onSelect: (
   const handleAiRewrite = async () => {
     if (!description.trim()) return;
     setIsAiLoading(true);
-    setAiError(null);
     try {
-      // Robust check for API key
-      const key = process.env.API_KEY;
-      if (!key || key === "" || key === "undefined") {
-        throw new Error("Missing API_KEY. On Netlify: 1. Go to Site Settings > Env Variables. 2. Verify Key is 'API_KEY'. 3. Go to Deploys > Trigger Deploy > 'Clear cache and deploy site'.");
-      }
+      const apiKey = process.env.API_KEY;
+      if (!apiKey) throw new Error("API Key not found");
+      const ai = new GoogleGenAI({ apiKey });
+      const prompt = `You are a pro renovation consultant. Rewrite this service description to be:
+      - Easy to scan (use bullet points if helpful)
+      - Highlight high value for money
+      - Professional and persuasive
+      - Strictly maintain the original scope. 
+      Input: "${description}"`;
 
-      const ai = new GoogleGenAI({ apiKey: key });
-      const prompt = `You are a professional interior design and renovation consultant. Rewrite this service description to be highly professional, persuasive, and clear.
-      - Use a professional tone.
-      - Ensure it sounds like great value for money.
-      - Keep it concise.
-      - Maintain the original scope of work.
-      
-      Input Description: "${description}"`;
-
-      const response = await ai.models.generateContent({ 
-        model: 'gemini-3-flash-preview', 
-        contents: prompt 
-      });
-
-      if (response.text) {
-        setDescription(response.text.trim());
-      } else {
-        throw new Error("AI produced an empty response.");
-      }
-    } catch (e: any) { 
-      console.error("AI Error:", e);
-      setAiError(e.message || "Failed to rewrite. Check your internet or API config.");
-    } finally { 
-      setIsAiLoading(false); 
-    }
+      const response = await ai.models.generateContent({ model: 'gemini-3-flash-preview', contents: prompt });
+      if (response.text) setDescription(response.text.trim());
+    } catch (e) { alert("AI error. Check API key."); }
+    finally { setIsAiLoading(false); }
   };
 
   return (
@@ -557,24 +558,8 @@ function ServiceSelector({ onBack, onSelect }: { onBack: () => void, onSelect: (
           <div className="bg-yellow-50 p-5 rounded-2xl border border-dashed border-yellow-200">
             <InputGroup label="Description (Editable)">
               <textarea rows={6} className="w-full p-3 bg-white border border-gray-200 rounded-xl outline-none resize-none text-sm" value={description} onChange={e => setDescription(e.target.value)} />
-              
-              {aiError && (
-                <div className="mt-3 p-3 bg-red-50 text-red-700 text-xs rounded-xl flex flex-col gap-2 border border-red-100 shadow-sm">
-                  <div className="flex items-center gap-2 font-bold">
-                    <AlertCircle size={14} />
-                    <span>Configuration Required</span>
-                  </div>
-                  <p className="leading-relaxed opacity-90">{aiError}</p>
-                </div>
-              )}
-
-              <button 
-                onClick={handleAiRewrite} 
-                disabled={isAiLoading} 
-                className="mt-3 w-full bg-slate-900 text-white p-4 rounded-xl text-xs font-bold flex items-center justify-center gap-2 hover:bg-slate-800 transition-colors disabled:bg-slate-400 shadow-md"
-              >
-                {isAiLoading ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} className="text-brand-gold" />} 
-                {isAiLoading ? 'Analyzing...' : 'Professional AI Rewrite'}
+              <button onClick={handleAiRewrite} disabled={isAiLoading} className="mt-2 w-full bg-slate-900 text-white p-3 rounded-lg text-xs font-bold flex items-center justify-center gap-2">
+                {isAiLoading ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />} Professional AI Rewrite
               </button>
             </InputGroup>
           </div>
@@ -592,17 +577,28 @@ function MeasurementForm({ serviceContext, editingItem, onBack, onSave }: { serv
   const [rate, setRate] = useState<number>(editingItem?.rate || serviceContext.rate || 0);
   const [walls, setWalls] = useState<Wall[]>(editingItem?.walls || []);
   const [ceilings, setCeilings] = useState<CeilingSection[]>(editingItem?.ceilings || []);
+  const [cabinetSections, setCabinetSections] = useState<CabinetSection[]>(editingItem?.cabinetSections || []);
   const [deductions, setDeductions] = useState<Deduction[]>(editingItem?.deductions || []);
   const [height, setHeight] = useState<number>(editingItem?.height || 10);
   const [l, setL] = useState<number>(editingItem?.l || 0);
   const [b, setB] = useState<number>(editingItem?.b || 0);
   const [q, setQ] = useState<number>(editingItem?.q || 1);
-  const [kArea, setKArea] = useState<number>(editingItem?.netArea || 0);
 
-  useEffect(() => { if (!editingItem && serviceContext.categoryId === 'painting' && walls.length === 0) setWalls([1,2,3,4].map(id => ({id: id.toString(), width: 0}))); }, []);
+  useEffect(() => { 
+    if (!editingItem) {
+      if (serviceContext.categoryId === 'painting' && walls.length === 0) {
+        setWalls([1,2,3,4].map(id => ({id: id.toString(), width: 0})));
+      }
+      if (serviceContext.isKitchen && cabinetSections.length === 0) {
+        setCabinetSections([{ id: Date.now().toString(), name: 'Base Cabinets', l: 0, b: 0, q: 1 }]);
+      }
+    }
+  }, []);
 
   const calculateTotal = (): number => {
-    if (serviceContext.isKitchen) return kArea;
+    if (serviceContext.isKitchen) {
+      return cabinetSections.reduce((acc, section) => acc + ((section.l || 0) * (section.b || 0) * (section.q || 1)), 0);
+    }
     if (serviceContext.isCustom) return (l || 0) * (b || 1) * (q || 1) || q;
     if (serviceContext.categoryId === 'painting') {
       const wArea = walls.reduce((s, w) => s + (w.width || 0), 0) * height;
@@ -616,12 +612,72 @@ function MeasurementForm({ serviceContext, editingItem, onBack, onSave }: { serv
   const netArea = calculateTotal();
   const cost = netArea * rate;
 
+  const addCabinetSection = () => {
+    setCabinetSections([...cabinetSections, { id: Date.now().toString(), name: 'New Section', l: 0, b: 0, q: 1 }]);
+  };
+
+  const removeCabinetSection = (id: string) => {
+    setCabinetSections(cabinetSections.filter(s => s.id !== id));
+  };
+
+  const updateCabinetSection = (id: string, field: keyof CabinetSection, val: any) => {
+    setCabinetSections(cabinetSections.map(s => s.id === id ? { ...s, [field]: val } : s));
+  };
+
   return (
     <div className="p-6 pb-64">
       <Header title="Measurement" onBack={onBack} />
       <div className="space-y-6">
-        <InputGroup label="Room / Item Name"><input className="w-full p-4 border border-gray-200 rounded-xl" value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Living Room" /></InputGroup>
-        <InputGroup label="Rate (₹)"><input type="number" className="w-full p-4 border border-gray-200 rounded-xl bg-yellow-50 font-bold" value={rate || ''} onChange={e => setRate(parseFloat(e.target.value) || 0)} /></InputGroup>
+        <InputGroup label="Room / Main Label">
+          <input className="w-full p-4 border border-gray-200 rounded-xl" value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Master Kitchen" />
+        </InputGroup>
+        <InputGroup label="Rate (₹)">
+          <input type="number" className="w-full p-4 border border-gray-200 rounded-xl bg-yellow-50 font-bold" value={rate || ''} onChange={e => setRate(parseFloat(e.target.value) || 0)} />
+        </InputGroup>
+        
+        {serviceContext.isKitchen && (
+          <div className="space-y-4">
+             <div className="flex justify-between items-center px-1">
+               <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Kitchen Cabinets</span>
+               <button onClick={addCabinetSection} className="flex items-center gap-1 text-[10px] font-bold text-yellow-600 bg-yellow-50 px-3 py-1.5 rounded-full border border-yellow-100">
+                 <Plus size={12} /> Add Section
+               </button>
+             </div>
+             <div className="space-y-3">
+               {cabinetSections.map((s, idx) => (
+                 <div key={s.id} className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm">
+                   <div className="flex justify-between items-center mb-3">
+                     <input 
+                       className="text-xs font-bold text-slate-700 bg-transparent border-none focus:ring-0 w-32" 
+                       value={s.name} 
+                       onChange={e => updateCabinetSection(s.id, 'name', e.target.value)}
+                     />
+                     {cabinetSections.length > 1 && (
+                       <button onClick={() => removeCabinetSection(s.id)} className="text-gray-300 hover:text-red-500">
+                         <Trash2 size={14} />
+                       </button>
+                     )}
+                   </div>
+                   <div className="grid grid-cols-3 gap-3">
+                     <div className="space-y-1">
+                       <label className="text-[9px] text-gray-400 font-bold uppercase">Length (ft)</label>
+                       <input type="number" className="w-full p-2 bg-gray-50 border border-gray-100 rounded-lg text-sm text-center" value={s.l || ''} onChange={e => updateCabinetSection(s.id, 'l', parseFloat(e.target.value) || 0)} />
+                     </div>
+                     <div className="space-y-1">
+                       <label className="text-[9px] text-gray-400 font-bold uppercase">Breadth (ft)</label>
+                       <input type="number" className="w-full p-2 bg-gray-50 border border-gray-100 rounded-lg text-sm text-center" value={s.b || ''} onChange={e => updateCabinetSection(s.id, 'b', parseFloat(e.target.value) || 0)} />
+                     </div>
+                     <div className="space-y-1">
+                       <label className="text-[9px] text-gray-400 font-bold uppercase">Quantity</label>
+                       <input type="number" className="w-full p-2 bg-gray-50 border border-gray-100 rounded-lg text-sm text-center font-bold" value={s.q || ''} onChange={e => updateCabinetSection(s.id, 'q', parseFloat(e.target.value) || 0)} />
+                     </div>
+                   </div>
+                 </div>
+               ))}
+             </div>
+          </div>
+        )}
+
         {serviceContext.categoryId === 'painting' && (
           <div className="space-y-4">
              <InputGroup label="Height (ft)"><input type="number" className="w-full p-4 border border-gray-200 rounded-xl" value={height} onChange={e => setHeight(parseFloat(e.target.value))} /></InputGroup>
@@ -644,6 +700,7 @@ function MeasurementForm({ serviceContext, editingItem, onBack, onSave }: { serv
              </div>
           </div>
         )}
+
         {(serviceContext.categoryId === 'woodwork' || serviceContext.isCustom) && !serviceContext.isKitchen && (
           <div className="grid grid-cols-3 gap-3">
             <InputGroup label="L"><input type="number" className="p-3 border border-gray-200 rounded-xl w-full" value={l || ''} onChange={e => setL(parseFloat(e.target.value))} /></InputGroup>
@@ -654,10 +711,10 @@ function MeasurementForm({ serviceContext, editingItem, onBack, onSave }: { serv
       </div>
       <Footer>
         <div className="mb-4 flex justify-between items-center bg-slate-900 text-white p-4 rounded-2xl">
-          <div className="text-left"><p className="text-[10px] text-gray-400 uppercase">Quantity</p><p className="font-bold">{netArea.toFixed(2)} {serviceContext.unit}</p></div>
-          <div className="text-right"><p className="text-[10px] text-gray-400 uppercase">Amount</p><p className="font-bold text-yellow-400">₹{Math.round(cost).toLocaleString()}</p></div>
+          <div className="text-left"><p className="text-[10px] text-gray-400 uppercase">Total Quantity</p><p className="font-bold">{netArea.toFixed(2)} {serviceContext.unit}</p></div>
+          <div className="text-right"><p className="text-[10px] text-gray-400 uppercase">Total Cost</p><p className="font-bold text-yellow-400">₹{Math.round(cost).toLocaleString()}</p></div>
         </div>
-        <button onClick={() => onSave({ id: editingItem?.id || Date.now().toString(), name: name || "Item", netArea, rate, cost, l, b, q, height, walls, ceilings, deductions })} className="w-full bg-slate-900 text-white py-4 rounded-xl font-bold">Save Entry</button>
+        <button onClick={() => onSave({ id: editingItem?.id || Date.now().toString(), name: name || "Item", netArea, rate, cost, l, b, q, height, walls, ceilings, cabinetSections, deductions })} className="w-full bg-slate-900 text-white py-4 rounded-xl font-bold">Save Measurement</button>
       </Footer>
     </div>
   );
@@ -666,39 +723,281 @@ function MeasurementForm({ serviceContext, editingItem, onBack, onSave }: { serv
 function QuoteView({ client, services, terms: initialTerms, onBack }: { client: ClientDetails, services: ActiveService[], terms: string, onBack: () => void }) {
   const [terms, setTerms] = useState(initialTerms);
   const total = services.reduce((s, ser) => s + ser.items.reduce((is, i) => is + i.cost, 0), 0);
-  const date = useMemo(() => new Date().toLocaleDateString(), []);
+  const date = useMemo(() => new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric' }), []);
 
   return (
     <div className="bg-slate-100 min-h-screen flex flex-col items-center p-4 print:p-0 print:bg-white print:block">
-      <div className="w-full max-w-[210mm] mb-6 flex justify-between no-print"><button onClick={onBack} className="bg-white px-4 py-2 rounded-lg border">Back</button><button onClick={() => window.print()} className="bg-slate-900 text-white px-6 py-2 rounded-lg font-bold">Print Quote</button></div>
-      <div className="w-full max-w-[210mm] bg-white min-h-[297mm] p-10 print:p-4 print:m-0 text-slate-800 shadow-xl print:shadow-none">
-        <div className="flex justify-between border-b pb-6 mb-8 print:pb-2 print:mb-2">
-          <img src={LOGO_URL} className="h-16 print:h-12 object-contain" />
-          <div className="text-right"><h2 className="text-3xl font-bold text-gray-200">QUOTE</h2><p className="text-xs">{date}</p></div>
+      <div className="w-full max-w-[210mm] mb-6 flex justify-between no-print items-center">
+        <button onClick={onBack} className="bg-white px-5 py-2.5 rounded-xl border border-gray-200 text-sm font-bold flex items-center gap-2 hover:bg-gray-50 transition-colors">
+          <ArrowLeft size={16} /> Dashboard
+        </button>
+        <div className="flex gap-3">
+          <button onClick={() => window.print()} className="bg-slate-900 text-white px-6 py-2.5 rounded-xl font-bold flex items-center gap-2 shadow-lg hover:bg-slate-800 transition-colors">
+            <Printer size={16} /> Print/Download PDF
+          </button>
         </div>
-        <div className="flex gap-10 mb-8 print:mb-2">
-          <div className="flex-1"><h4 className="text-[10px] font-bold text-gray-400 mb-1 uppercase">Client</h4><p className="font-bold">{client.name}</p><p className="text-xs whitespace-pre-wrap">{client.address}</p></div>
-          <div className="flex-1 text-right"><h4 className="text-[10px] font-bold text-gray-400 mb-1 uppercase">Project</h4><p className="font-bold">Renovation Estimate</p><p className="text-xs">#{Math.floor(Math.random()*10000)}</p></div>
+      </div>
+
+      <div className="w-full max-w-[210mm] bg-white min-h-[297mm] p-12 print:p-8 print:m-0 text-slate-900 shadow-[0_0_50px_-10px_rgba(0,0,0,0.1)] print:shadow-none font-sans flex flex-col">
+        {/* Header */}
+        <div className="flex justify-between items-start border-b-2 border-slate-900 pb-8 mb-8">
+          <div>
+            <img src={LOGO_URL} className="h-14 print:h-12 object-contain mb-4" />
+            <h1 className="text-2xl font-black uppercase tracking-tighter">Renowix Renovations</h1>
+            <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest leading-none">Complete Home Interior Solutions</p>
+          </div>
+          <div className="text-right">
+            <h2 className="text-4xl font-black text-slate-100 print:text-slate-200 uppercase leading-none mb-4">Quotation</h2>
+            <div className="space-y-1">
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Document No.</p>
+              <p className="font-bold">#RX-{Math.floor(Date.now() / 10000).toString().slice(-6)}</p>
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-2">Date of Issue</p>
+              <p className="font-bold text-xs">{date}</p>
+            </div>
+          </div>
         </div>
-        <table className="w-full text-sm mb-10 print:mb-2 print:text-xs">
-          <thead><tr className="border-b-2 border-slate-900"><th className="py-2 text-left">#</th><th className="py-2 text-left">Description</th><th className="py-2 text-right">Qty</th><th className="py-2 text-right">Amount</th></tr></thead>
-          <tbody className="divide-y divide-gray-100">
-            {services.map((s, idx) => (
-              <tr key={idx} className="break-inside-avoid">
-                <td className="py-3 print:py-1 font-bold text-slate-300">{idx+1}</td>
-                <td className="py-3 print:py-1"><p className="font-bold">{s.name}</p><p className="text-xs text-gray-400 whitespace-pre-wrap">{s.desc}</p></td>
-                <td className="py-3 print:py-1 text-right">{s.items.reduce((a,b)=>a+b.netArea,0).toFixed(2)} {s.unit}</td>
-                <td className="py-3 print:py-1 text-right font-bold">₹{Math.round(s.items.reduce((a,b)=>a+b.cost,0)).toLocaleString()}</td>
+
+        {/* Client & Site Info */}
+        <div className="grid grid-cols-2 gap-12 mb-10">
+          <div className="p-4 bg-slate-50 border border-slate-100 rounded-xl">
+            <h4 className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-3 border-b border-slate-200 pb-1">Client Details</h4>
+            <p className="text-lg font-bold text-slate-900 mb-1">{client.name}</p>
+            <p className="text-xs text-gray-500 italic">Preferred Homeowner</p>
+          </div>
+          <div className="p-4 bg-slate-50 border border-slate-100 rounded-xl">
+            <h4 className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-3 border-b border-slate-200 pb-1">Site Address</h4>
+            <p className="text-xs leading-relaxed font-medium whitespace-pre-wrap">{client.address || "Address details not specified"}</p>
+          </div>
+        </div>
+
+        {/* Main Items Table */}
+        <div className="flex-1 overflow-hidden">
+          <table className="w-full text-sm border-collapse">
+            <thead className="bg-slate-900 text-white">
+              <tr>
+                <th className="py-4 px-4 text-left font-black text-[10px] uppercase tracking-widest w-12">No.</th>
+                <th className="py-4 px-4 text-left font-black text-[10px] uppercase tracking-widest">Service Profile & Scope</th>
+                <th className="py-4 px-4 text-right font-black text-[10px] uppercase tracking-widest w-28">Quantity</th>
+                <th className="py-4 px-4 text-right font-black text-[10px] uppercase tracking-widest w-32">Amount (₹)</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
-        <div className="flex justify-end mb-10 print:mb-2"><div className="w-48 border-t border-slate-900 pt-2 flex justify-between font-bold text-lg print:text-sm"><span>Total</span><span>₹{Math.round(total).toLocaleString()}</span></div></div>
-        <div className="break-inside-avoid">
-          <h4 className="text-[10px] font-bold text-gray-400 mb-2 uppercase tracking-widest">Terms</h4>
-          <textarea rows={10} className="w-full text-xs bg-slate-50 border-none rounded-xl p-4 print:p-0 print:bg-white resize-none" value={terms} onChange={e => setTerms(e.target.value)} />
+            </thead>
+            <tbody className="divide-y divide-slate-100 border-x border-b border-slate-100">
+              {services.map((s, idx) => (
+                <tr key={idx} className="break-inside-avoid">
+                  <td className="py-6 px-4 align-top font-black text-slate-300">{(idx + 1).toString().padStart(2, '0')}</td>
+                  <td className="py-6 px-4 align-top">
+                    <p className="font-black text-slate-900 mb-2 uppercase tracking-tight text-base">{s.name}</p>
+                    <p className="text-xs text-slate-400 leading-relaxed font-medium whitespace-pre-wrap mb-3">{s.desc}</p>
+                    
+                    {/* Measurement Breakdown inside the quote */}
+                    <div className="mt-4 space-y-1">
+                      {s.items.map((item, iIdx) => (
+                        <div key={iIdx} className="flex justify-between items-center text-[10px] bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-100 text-slate-500">
+                           <span className="font-bold">{item.name}</span>
+                           <span>{item.netArea.toFixed(2)} {s.unit} @ ₹{item.rate}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </td>
+                  <td className="py-6 px-4 align-top text-right font-bold text-slate-900 text-base">
+                    {s.items.reduce((a, b) => a + b.netArea, 0).toFixed(2)}
+                    <span className="text-[9px] font-black opacity-30 ml-1">{s.unit.toUpperCase()}</span>
+                  </td>
+                  <td className="py-6 px-4 align-top text-right font-black text-slate-900 text-base">
+                    ₹{Math.round(s.items.reduce((a, b) => a + b.cost, 0)).toLocaleString()}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
-        <div className="mt-16 flex justify-end"><div className="w-48 border-t border-slate-300 text-center text-[10px] font-bold text-gray-400 pt-2 uppercase">Signature</div></div>
+
+        {/* Totals Section */}
+        <div className="mt-8 flex justify-end">
+          <div className="w-72">
+            <div className="flex justify-between py-2 px-4 border-b border-slate-100">
+              <span className="text-[10px] font-bold text-slate-400 uppercase">Sub-Total</span>
+              <span className="font-bold">₹{Math.round(total).toLocaleString()}</span>
+            </div>
+            <div className="flex justify-between py-2 px-4 border-b border-slate-100">
+              <span className="text-[10px] font-bold text-slate-400 uppercase">GST (Applicable Extra)</span>
+              <span className="text-xs font-bold text-slate-300">As per actuals</span>
+            </div>
+            <div className="flex justify-between py-6 px-4 bg-slate-900 text-white rounded-b-2xl shadow-xl mt-4">
+              <span className="text-xs font-black uppercase tracking-widest">Grand Total</span>
+              <span className="text-2xl font-black">₹{Math.round(total).toLocaleString()}</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Terms and Signatures */}
+        <div className="mt-12 break-inside-avoid">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
+            <div>
+              <h4 className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-4 flex items-center gap-2">
+                <TableIcon size={12} className="text-slate-900" /> Standard Terms & Conditions
+              </h4>
+              <div className="bg-slate-50 p-6 rounded-2xl border border-slate-100 no-print">
+                <textarea 
+                  rows={8} 
+                  className="w-full text-[11px] bg-transparent border-none outline-none resize-none leading-loose font-medium text-slate-600" 
+                  value={terms} 
+                  onChange={e => setTerms(e.target.value)} 
+                />
+              </div>
+              <div className="print-only text-[10px] leading-loose text-slate-500 font-medium whitespace-pre-wrap pt-2 px-2">
+                {terms}
+              </div>
+            </div>
+            <div className="flex flex-col justify-end space-y-12 pb-4">
+              <div className="flex justify-between items-end">
+                <div className="text-center w-40">
+                  <div className="border-t-2 border-slate-900 mb-2"></div>
+                  <p className="text-[9px] font-bold uppercase text-slate-400">Company Signature</p>
+                </div>
+                <div className="text-center w-40">
+                  <div className="border-t-2 border-slate-200 mb-2"></div>
+                  <p className="text-[9px] font-bold uppercase text-slate-300">Customer Acceptance</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-16 text-center border-t border-slate-50 pt-8 opacity-20 no-print">
+          <p className="text-[8px] font-black uppercase tracking-[0.5em]">Renowix Surveyor Pro Enterprise Suite</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MeasurementSheetView({ client, services, onBack }: { client: ClientDetails, services: ActiveService[], onBack: () => void }) {
+  const date = useMemo(() => new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric' }), []);
+
+  return (
+    <div className="bg-slate-100 min-h-screen flex flex-col items-center p-4 print:p-0 print:bg-white print:block">
+      <div className="w-full max-w-[210mm] mb-6 flex justify-between no-print items-center">
+        <button onClick={onBack} className="bg-white px-5 py-2.5 rounded-xl border border-gray-200 text-sm font-bold flex items-center gap-2 hover:bg-gray-50 transition-colors">
+          <ArrowLeft size={16} /> Dashboard
+        </button>
+        <button onClick={() => window.print()} className="bg-slate-900 text-white px-6 py-2.5 rounded-xl font-bold flex items-center gap-2 shadow-lg hover:bg-slate-800 transition-colors">
+          <Printer size={16} /> Print Meas. Sheet
+        </button>
+      </div>
+
+      <div className="w-full max-w-[210mm] bg-white min-h-[297mm] p-12 print:p-8 print:m-0 text-slate-900 shadow-[0_0_50px_-10px_rgba(0,0,0,0.1)] print:shadow-none font-sans flex flex-col">
+        {/* Branded Header */}
+        <div className="flex justify-between items-start border-b-2 border-slate-900 pb-8 mb-8">
+          <div>
+            <img src={LOGO_URL} className="h-14 print:h-12 object-contain mb-4" />
+            <h1 className="text-xl font-black uppercase tracking-tighter">Renowix Renovations</h1>
+            <p className="text-[9px] text-gray-500 font-bold uppercase tracking-widest leading-none">Measurement Portfolio (Price-Free)</p>
+          </div>
+          <div className="text-right">
+            <h2 className="text-4xl font-black text-slate-100 print:text-slate-200 uppercase leading-none mb-4">M-Sheet</h2>
+            <div className="space-y-1">
+              <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Ref Code</p>
+              <p className="font-bold text-xs">MSR-{Math.floor(Date.now() / 1000).toString().slice(-6)}</p>
+              <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-2">Survey Date</p>
+              <p className="font-bold text-xs">{date}</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Site Details */}
+        <div className="grid grid-cols-2 gap-8 mb-8">
+          <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl">
+             <h4 className="text-[8px] font-black text-slate-400 uppercase tracking-[0.2em] mb-2 border-b border-slate-200 pb-1">Client</h4>
+             <p className="text-sm font-bold text-slate-800">{client.name}</p>
+          </div>
+          <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl">
+             <h4 className="text-[8px] font-black text-slate-400 uppercase tracking-[0.2em] mb-2 border-b border-slate-200 pb-1">Site Address</h4>
+             <p className="text-[10px] leading-tight font-medium text-slate-600 whitespace-pre-wrap">{client.address}</p>
+          </div>
+        </div>
+
+        {/* Spreadsheet Table */}
+        <div className="flex-1">
+          <table className="w-full text-[11px] border-collapse">
+            <thead className="bg-slate-100">
+              <tr className="border-y-2 border-slate-900">
+                <th className="py-3 px-2 text-left font-black uppercase tracking-widest w-10">S#</th>
+                <th className="py-3 px-3 text-left font-black uppercase tracking-widest w-40">Section / Room</th>
+                <th className="py-3 px-3 text-left font-black uppercase tracking-widest">Dimension Details & Breakdown</th>
+                <th className="py-3 px-3 text-right font-black uppercase tracking-widest w-24">Net Area</th>
+                <th className="py-3 px-3 text-left font-black uppercase tracking-widest w-16">Unit</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-200 border-x border-b border-slate-200">
+              {services.map((s, sIdx) => (
+                <React.Fragment key={sIdx}>
+                  {/* Service Sub-header */}
+                  <tr className="bg-slate-50">
+                    <td colSpan={5} className="py-2 px-3">
+                       <p className="font-black text-[10px] uppercase tracking-[0.1em] text-slate-900 flex items-center gap-2">
+                          <TableIcon size={12} className="text-slate-400" /> {s.name}
+                       </p>
+                    </td>
+                  </tr>
+                  {s.items.map((item, iIdx) => (
+                    <tr key={item.id} className="break-inside-avoid align-top">
+                      <td className="py-4 px-2 text-slate-300 font-bold text-center">{(iIdx + 1)}</td>
+                      <td className="py-4 px-3 font-bold text-slate-800 uppercase tracking-tight">{item.name}</td>
+                      <td className="py-4 px-3 text-slate-500 leading-relaxed">
+                        {s.isKitchen && item.cabinetSections && (
+                           <div className="space-y-1">
+                              {item.cabinetSections.map((cab, cIdx) => (
+                                 <div key={cab.id} className="flex justify-between border-b border-slate-100 last:border-0 pb-1">
+                                    <span className="font-bold text-slate-600 text-[10px]">{cab.name}</span>
+                                    <span>({cab.l} × {cab.b}) × {cab.q} = {(cab.l * cab.b * cab.q).toFixed(2)}</span>
+                                 </div>
+                              ))}
+                           </div>
+                        )}
+                        {s.categoryId === 'painting' && (
+                           <div className="space-y-1">
+                              <div><span className="font-bold text-[9px] uppercase tracking-widest text-slate-400">Walls:</span> {item.walls?.map(w => w.width).join(' + ')} (Sum: {item.walls?.reduce((a,b)=>a+b.width,0)}) × H:{item.height}ft</div>
+                              {item.deductions && item.deductions.length > 0 && (
+                                <div className="text-red-400 text-[9px] italic">Less Deductions: {item.deductions.map(d => `${d.area}×${d.qty}`).join(', ')}</div>
+                              )}
+                           </div>
+                        )}
+                        {(s.categoryId === 'woodwork' || s.isCustom) && !s.isKitchen && (
+                           <div>L:{item.l} × B:{item.b} × Q:{item.q}</div>
+                        )}
+                      </td>
+                      <td className="py-4 px-3 text-right font-black text-slate-900 text-[12px]">{item.netArea.toFixed(2)}</td>
+                      <td className="py-4 px-3 text-left font-bold text-slate-300 uppercase">{s.unit}</td>
+                    </tr>
+                  ))}
+                  {/* Category Summary Row */}
+                  <tr className="bg-slate-50/50">
+                    <td colSpan={3} className="py-2 px-3 text-right font-bold text-slate-400 uppercase text-[9px]">Total {s.name}</td>
+                    <td className="py-2 px-3 text-right font-black border-l-2 border-slate-900 bg-white">{s.items.reduce((a,b)=>a+b.netArea,0).toFixed(2)}</td>
+                    <td className="py-2 px-3 text-left font-bold text-slate-400 uppercase text-[9px]">{s.unit}</td>
+                  </tr>
+                </React.Fragment>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Footer Area */}
+        <div className="mt-12 flex justify-between items-end border-t border-slate-100 pt-10 break-inside-avoid">
+           <div className="text-left w-48">
+              <div className="h-10 mb-2 border-b-2 border-slate-900"></div>
+              <p className="text-[9px] font-black uppercase text-slate-400 tracking-widest">Surveyor Signature</p>
+           </div>
+           <div className="text-right w-48">
+              <div className="h-10 mb-2 border-b-2 border-slate-100"></div>
+              <p className="text-[9px] font-black uppercase text-slate-400 tracking-widest">Site Supervisor / Client</p>
+           </div>
+        </div>
+
+        <div className="mt-16 text-center opacity-10 no-print">
+           <p className="text-[7px] font-black tracking-[1em] uppercase">Enterprise Measurement Ledger System</p>
+        </div>
       </div>
     </div>
   );

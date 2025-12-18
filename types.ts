@@ -12,6 +12,14 @@ export interface CeilingSection {
   b: number;
 }
 
+export interface CabinetSection {
+  id: string;
+  name: string;
+  l: number;
+  b: number;
+  q: number;
+}
+
 export interface Deduction {
   id: string;
   type: string;
@@ -30,6 +38,7 @@ export interface MeasurementItem {
   height?: number;
   walls?: Wall[];
   ceilings?: CeilingSection[];
+  cabinetSections?: CabinetSection[];
   deductions?: Deduction[];
   
   // Woodwork / Custom dimensions
@@ -98,4 +107,5 @@ export type PageView =
   | 'dashboard' 
   | 'service-select' 
   | 'measure' 
-  | 'quote';
+  | 'quote'
+  | 'measurement-sheet';
