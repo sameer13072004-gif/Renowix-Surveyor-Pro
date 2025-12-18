@@ -91,4 +91,11 @@ export interface User {
 }
 
 export type PageView = 
-  |
+  | 'setup' 
+  | 'welcome' 
+  | 'history' 
+  | 'client-details' 
+  | 'dashboard' 
+  | 'service-select' 
+  | 'measure' 
+  | 'quote';
