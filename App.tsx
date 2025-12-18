@@ -26,7 +26,8 @@ import {
   Layers,
   Box,
   Sparkles,
-  Loader2
+  Loader2,
+  AlertCircle
 } from 'lucide-react';
 import { 
   ActiveService, 
@@ -480,6 +481,7 @@ function ServiceSelector({ onBack, onSelect }: { onBack: () => void, onSelect: (
   const [customName, setCustomName] = useState('');
   const [description, setDescription] = useState('');
   const [isAiLoading, setIsAiLoading] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
 
   useEffect(() => { setType(cat === 'custom' ? 'custom_item' : ''); }, [cat]);
   useEffect(() => {
@@ -492,19 +494,37 @@ function ServiceSelector({ onBack, onSelect }: { onBack: () => void, onSelect: (
   const handleAiRewrite = async () => {
     if (!description.trim()) return;
     setIsAiLoading(true);
+    setAiError(null);
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-      const prompt = `You are a pro renovation consultant. Rewrite this service description to be:
-      - Easy to scan (use bullet points if helpful)
-      - Highlight high value for money
-      - Professional and persuasive
-      - Strictly maintain the original scope. 
-      Input: "${description}"`;
+      if (!process.env.API_KEY) {
+        throw new Error("API Key is missing. Please check your Netlify environment variables.");
+      }
 
-      const result = await ai.models.generateContent({ model: 'gemini-3-flash-preview', contents: prompt });
-      if (result.text) setDescription(result.text.trim());
-    } catch (e) { alert("AI error. Check API key."); }
-    finally { setIsAiLoading(false); }
+      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      const prompt = `You are a professional interior design and renovation consultant. Rewrite this service description to be highly professional, persuasive, and clear.
+      - Use a professional tone.
+      - Ensure it sounds like great value for money.
+      - Keep it concise.
+      - Maintain the original scope of work.
+      
+      Input Description: "${description}"`;
+
+      const response = await ai.models.generateContent({ 
+        model: 'gemini-3-flash-preview', 
+        contents: prompt 
+      });
+
+      if (response.text) {
+        setDescription(response.text.trim());
+      } else {
+        throw new Error("No response from AI.");
+      }
+    } catch (e: any) { 
+      console.error("AI Error:", e);
+      setAiError(e.message || "Failed to rewrite. Check API configuration.");
+    } finally { 
+      setIsAiLoading(false); 
+    }
   };
 
   return (
@@ -534,8 +554,21 @@ function ServiceSelector({ onBack, onSelect }: { onBack: () => void, onSelect: (
           <div className="bg-yellow-50 p-5 rounded-2xl border border-dashed border-yellow-200">
             <InputGroup label="Description (Editable)">
               <textarea rows={6} className="w-full p-3 bg-white border border-gray-200 rounded-xl outline-none resize-none text-sm" value={description} onChange={e => setDescription(e.target.value)} />
-              <button onClick={handleAiRewrite} disabled={isAiLoading} className="mt-2 w-full bg-slate-900 text-white p-3 rounded-lg text-xs font-bold flex items-center justify-center gap-2">
-                {isAiLoading ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />} Professional AI Rewrite
+              
+              {aiError && (
+                <div className="mt-2 p-2 bg-red-50 text-red-600 text-xs rounded-lg flex items-center gap-2 border border-red-100">
+                  <AlertCircle size={14} />
+                  <span>{aiError}</span>
+                </div>
+              )}
+
+              <button 
+                onClick={handleAiRewrite} 
+                disabled={isAiLoading} 
+                className="mt-2 w-full bg-slate-900 text-white p-3 rounded-lg text-xs font-bold flex items-center justify-center gap-2 hover:bg-slate-800 transition-colors disabled:bg-slate-400"
+              >
+                {isAiLoading ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} className="text-brand-gold" />} 
+                {isAiLoading ? 'Analyzing...' : 'Professional AI Rewrite'}
               </button>
             </InputGroup>
           </div>
