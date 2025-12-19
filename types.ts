@@ -38,6 +38,7 @@ export interface MeasurementItem {
   height?: number;
   walls?: Wall[];
   ceilings?: CeilingSection[];
+  extraAreas?: CeilingSection[];
   cabinetSections?: CabinetSection[];
   deductions?: Deduction[];
   
