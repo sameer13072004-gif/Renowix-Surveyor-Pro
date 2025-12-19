@@ -33,7 +33,8 @@ import {
   PlusCircle,
   Calendar,
   LogOut,
-  Bell
+  Bell,
+  XCircle
 } from 'lucide-react';
 import { 
   ActiveService, 
@@ -76,6 +77,7 @@ export default function App() {
 
   // Modals
   const [exitModal, setExitModal] = useState<{ show: boolean; target: PageView | null }>({ show: false, target: null });
+  const [exitAppModal, setExitAppModal] = useState(false);
   const [saveModal, setSaveModal] = useState<{ show: boolean }>({ show: false });
   const [reminderModal, setReminderModal] = useState<{ show: boolean; project: Project | null; dueDate: string; isSaving: boolean }>({
     show: false,
@@ -96,10 +98,19 @@ export default function App() {
   // Handle device back button
   useEffect(() => {
     const handlePopState = (e: PopStateEvent) => {
+      // If we are on the main entry screens, ask to exit the whole app
+      if (view === 'welcome' || view === 'setup') {
+        window.history.pushState(null, '', ''); 
+        setExitAppModal(true);
+        return;
+      }
+
+      // If we have unsaved data on core project screens
       if (isDirty && (view === 'dashboard' || view === 'client-details' || view === 'measure')) {
         window.history.pushState(null, '', ''); 
         setExitModal({ show: true, target: 'welcome' });
-      } else if (view !== 'welcome' && view !== 'setup') {
+      } else {
+        // Fix for redundant view comparison error: 'welcome' and 'setup' are already handled by early return.
         const prevViews: Record<string, PageView> = {
           'history': 'welcome',
           'client-details': 'welcome',
@@ -164,13 +175,23 @@ export default function App() {
     }
   };
 
+  const handleSignOut = () => {
+    setGoogleToken(null);
+    localStorage.removeItem('google_access_token');
+    // For a cleaner logout, we can also revoke the token if needed
+  };
+
   const createGoogleTask = async () => {
     if (!googleToken || !reminderModal.project) return;
     setReminderModal(prev => ({ ...prev, isSaving: true }));
     
     try {
       const { project, dueDate } = reminderModal;
-      const rfc3339 = new Date(dueDate).toISOString();
+      // Google Tasks API usually ignores the time part of 'due' for notifications.
+      // To ensure user sees the time, we include it in the Title.
+      const dateObj = new Date(dueDate);
+      const timeStr = dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      const rfc3339 = dateObj.toISOString();
       
       const summary = project.services.map(s => s.name).join(', ');
       const response = await fetch('https://www.googleapis.com/tasks/v1/lists/@default/tasks', {
@@ -180,8 +201,8 @@ export default function App() {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          title: `Follow up: ${project.client.name}`,
-          notes: `Project Summary: ${summary}\nSite: ${project.client.address}\nLink: ${window.location.origin}`,
+          title: `[${timeStr}] Follow up: ${project.client.name}`,
+          notes: `Project Summary: ${summary}\nSite: ${project.client.address}`,
           due: rfc3339
         })
       });
@@ -327,11 +348,25 @@ export default function App() {
       <div className="w-full max-w-xl bg-white sm:rounded-3xl shadow-2xl flex flex-col min-h-screen sm:min-h-[85vh] relative overflow-hidden border border-gray-100">
         
         {view !== 'setup' && (
-          <div className="px-4 py-2 bg-white border-b border-gray-100 sticky top-0 z-50 flex items-center justify-between shadow-sm">
-            <img src={LOGO_URL} alt="Renowix" className="h-10 w-auto object-contain" />
-            <div className="flex items-center gap-1">
-               <span className="text-sm font-bold text-slate-800 tracking-tight">Surveyor</span>
-               <span className="text-sm font-bold text-yellow-500">Pro</span>
+          <div className="px-4 py-3 bg-white border-b border-gray-100 sticky top-0 z-50 flex items-center justify-between shadow-sm">
+            <div className="flex items-center gap-3">
+              <img src={LOGO_URL} alt="Renowix" className="h-10 w-auto object-contain" />
+              <div className="flex items-center gap-1.5 leading-none">
+                 <span className="text-lg font-black text-slate-900 tracking-tighter">Surveyor</span>
+                 <span className="text-lg font-black text-yellow-500 tracking-tighter italic">Pro</span>
+              </div>
+            </div>
+            
+            <div className="flex items-center">
+               <button 
+                  onClick={googleToken ? handleSignOut : handleGoogleSignIn}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-2xl border transition-all flex-nowrap whitespace-nowrap ${googleToken ? 'border-red-100 bg-red-50 text-red-600 hover:bg-red-100' : 'border-slate-200 bg-white text-slate-800 hover:bg-slate-50 shadow-sm'}`}
+                >
+                  {googleToken ? <LogOut size={16} /> : <Calendar size={16} />}
+                  <span className="text-[11px] font-black uppercase tracking-wider leading-none">
+                    {googleToken ? 'Sign Out' : 'Sign In'}
+                  </span>
+                </button>
             </div>
           </div>
         )}
@@ -364,19 +399,9 @@ export default function App() {
 
           {view === 'welcome' && (
             <div className="p-6">
-              <div className="mb-8 flex justify-between items-start">
-                  <div>
-                    <h2 className="text-2xl font-display font-black text-slate-800">Hello, <span className="text-brand-gold">{surveyorName}</span></h2>
-                    <p className="text-slate-500 mt-1 font-medium text-sm">Create a fresh estimate or view records.</p>
-                  </div>
-                  <button 
-                    onClick={googleToken ? () => { setGoogleToken(null); localStorage.removeItem('google_access_token'); } : handleGoogleSignIn}
-                    className={`p-3 rounded-2xl border ${googleToken ? 'border-green-100 bg-green-50 text-green-600' : 'border-slate-200 bg-white text-slate-500'} shadow-sm hover:shadow-md transition-all flex items-center gap-2`}
-                    title={googleToken ? "Google Linked" : "Link Google Tasks"}
-                  >
-                    {googleToken ? <CheckCircle size={20} /> : <Calendar size={20} />}
-                    <span className="text-[10px] font-black uppercase tracking-widest">{googleToken ? 'Linked' : 'Sign In'}</span>
-                  </button>
+              <div className="mb-8">
+                  <h2 className="text-2xl font-display font-black text-slate-800">Hello, <span className="text-brand-gold">{surveyorName}</span></h2>
+                  <p className="text-slate-500 mt-1 font-medium text-sm">Create a fresh estimate or view records.</p>
               </div>
                
               <div className="space-y-4">
@@ -438,7 +463,7 @@ export default function App() {
                         <button 
                           onClick={() => {
                             if (!googleToken) {
-                              alert("Please sign in with Google on the Home screen first.");
+                              alert("Please sign in at the top right first.");
                               return;
                             }
                             setReminderModal(prev => ({ ...prev, show: true, project: p }));
@@ -574,6 +599,36 @@ export default function App() {
         </div>
       </div>
 
+      {/* EXIT APP MODAL */}
+      {exitAppModal && (
+        <div className="fixed inset-0 z-[300] flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-md transition-all">
+          <div className="w-full max-w-sm bg-white rounded-3xl p-6 shadow-2xl border border-slate-100 animate-in fade-in zoom-in duration-200">
+            <div className="flex flex-col items-center text-center mb-6">
+              <div className="bg-red-50 text-red-500 p-4 rounded-full mb-4 shadow-inner">
+                <XCircle size={32} />
+              </div>
+              <h3 className="text-xl font-black text-slate-800 mb-2">Exit Application?</h3>
+              <p className="text-sm font-medium text-slate-500">Do you want to close the Renowix Surveyor Pro app?</p>
+            </div>
+            
+            <div className="flex gap-3">
+              <button 
+                onClick={() => setExitAppModal(false)}
+                className="flex-1 py-4 bg-slate-100 text-slate-600 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-slate-200 transition-all"
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={() => window.close()} // Note: browsers often block window.close() unless opened by script, but it's the standard intent
+                className="flex-1 py-4 bg-red-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-red-700 transition-all shadow-lg"
+              >
+                Yes, Exit
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* REMINDER MODAL (Google Tasks Integration) */}
       {reminderModal.show && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
@@ -612,7 +667,7 @@ export default function App() {
         </div>
       )}
 
-      {/* EXIT MODAL (Revised Wording to match original 3-button style) */}
+      {/* EXIT MODAL */}
       {exitModal.show && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm transition-all">
           <div className="w-full max-w-sm bg-white rounded-3xl p-6 shadow-2xl border border-slate-100 animate-in fade-in zoom-in duration-200">
