@@ -71,7 +71,7 @@ export default function App() {
   const [isDirty, setIsDirty] = useState(false);
   const [currentProjectId, setCurrentProjectId] = useState<string | null>(null);
   
-  // Google Auth & Tasks
+  // Google Auth
   const [googleToken, setGoogleToken] = useState<string | null>(null);
   const tokenClientRef = useRef<any>(null);
 
@@ -86,6 +86,18 @@ export default function App() {
     isSaving: false
   });
 
+  // Navigation Guard: Prevent data loss on accidental reload/close
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (isDirty) {
+        e.preventDefault();
+        e.returnValue = ''; // Standard for modern browsers
+      }
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [isDirty]);
+
   // Handle back navigation with unsaved changes check
   const handleBackNavigation = (target: PageView) => {
     if (isDirty && (view === 'dashboard' || view === 'client-details' || view === 'measure')) {
@@ -98,19 +110,16 @@ export default function App() {
   // Handle device back button
   useEffect(() => {
     const handlePopState = (e: PopStateEvent) => {
-      // If we are on the main entry screens, ask to exit the whole app
       if (view === 'welcome' || view === 'setup') {
         window.history.pushState(null, '', ''); 
         setExitAppModal(true);
         return;
       }
 
-      // If we have unsaved data on core project screens
       if (isDirty && (view === 'dashboard' || view === 'client-details' || view === 'measure')) {
         window.history.pushState(null, '', ''); 
         setExitModal({ show: true, target: 'welcome' });
       } else {
-        // Fix for redundant view comparison error: 'welcome' and 'setup' are already handled by early return.
         const prevViews: Record<string, PageView> = {
           'history': 'welcome',
           'client-details': 'welcome',
@@ -131,13 +140,13 @@ export default function App() {
     return () => window.removeEventListener('popstate', handlePopState);
   }, [view, isDirty]);
 
-  // Google Tasks Auth Init
+  // Google Calendar Auth Init
   useEffect(() => {
     const initGsi = () => {
       if (typeof window.google === 'undefined') return;
       tokenClientRef.current = window.google.accounts.oauth2.initTokenClient({
         client_id: CLIENT_ID,
-        scope: 'https://www.googleapis.com/auth/tasks',
+        scope: 'https://www.googleapis.com/auth/calendar.events',
         callback: (response: any) => {
           if (response.access_token) {
             setGoogleToken(response.access_token);
@@ -178,32 +187,41 @@ export default function App() {
   const handleSignOut = () => {
     setGoogleToken(null);
     localStorage.removeItem('google_access_token');
-    // For a cleaner logout, we can also revoke the token if needed
   };
 
-  const createGoogleTask = async () => {
+  const createCalendarEvent = async () => {
     if (!googleToken || !reminderModal.project) return;
     setReminderModal(prev => ({ ...prev, isSaving: true }));
     
     try {
       const { project, dueDate } = reminderModal;
-      // Google Tasks API usually ignores the time part of 'due' for notifications.
-      // To ensure user sees the time, we include it in the Title.
-      const dateObj = new Date(dueDate);
-      const timeStr = dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-      const rfc3339 = dateObj.toISOString();
+      const startTime = new Date(dueDate);
+      const endTime = new Date(startTime.getTime() + 30 * 60000); // 30 minutes duration
       
-      const summary = project.services.map(s => s.name).join(', ');
-      const response = await fetch('https://www.googleapis.com/tasks/v1/lists/@default/tasks', {
+      const summary = `Follow up: ${project.client.name} - Renowix`;
+      const description = `Project Summary: ${project.services.map(s => s.name).join(', ')}\nSite: ${project.client.address}`;
+      
+      const response = await fetch('https://www.googleapis.com/calendar/v3/calendars/primary/events', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${googleToken}`,
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          title: `[${timeStr}] Follow up: ${project.client.name}`,
-          notes: `Project Summary: ${summary}\nSite: ${project.client.address}`,
-          due: rfc3339
+          summary,
+          description,
+          start: {
+            dateTime: startTime.toISOString(),
+          },
+          end: {
+            dateTime: endTime.toISOString(),
+          },
+          reminders: {
+            useDefault: false,
+            overrides: [
+              { method: 'popup', minutes: 15 } // Ensure notification triggers 15 mins before
+            ]
+          }
         })
       });
 
@@ -212,10 +230,10 @@ export default function App() {
           handleGoogleSignIn(); // Re-auth
           throw new Error("Session expired. Please sign in again.");
         }
-        throw new Error("Failed to create task");
+        throw new Error("Failed to create calendar event");
       }
 
-      alert("Follow-up reminder set successfully in Google Tasks!");
+      alert("Follow-up reminder set successfully in Google Calendar!");
       setReminderModal({ show: false, project: null, dueDate: '', isSaving: false });
     } catch (error: any) {
       alert(error.message || "An error occurred");
@@ -352,8 +370,8 @@ export default function App() {
             <div className="flex items-center gap-3">
               <img src={LOGO_URL} alt="Renowix" className="h-10 w-auto object-contain" />
               <div className="flex items-center gap-1.5 leading-none">
-                 <span className="text-lg font-black text-slate-900 tracking-tighter">Surveyor</span>
-                 <span className="text-lg font-black text-yellow-500 tracking-tighter italic">Pro</span>
+                 <span className="text-xl font-black text-slate-900 tracking-tighter">Surveyor</span>
+                 <span className="text-xl font-black text-yellow-500 tracking-tighter italic">Pro</span>
               </div>
             </div>
             
@@ -629,7 +647,7 @@ export default function App() {
         </div>
       )}
 
-      {/* REMINDER MODAL (Google Tasks Integration) */}
+      {/* REMINDER MODAL (Google Calendar Integration) */}
       {reminderModal.show && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
           <div className="w-full max-w-sm bg-white rounded-3xl p-6 shadow-2xl border border-slate-100">
@@ -655,7 +673,7 @@ export default function App() {
                 Cancel
               </button>
               <button 
-                onClick={createGoogleTask}
+                onClick={createCalendarEvent}
                 disabled={reminderModal.isSaving}
                 className="flex-[2] py-4 bg-slate-800 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-slate-700 transition-all flex items-center justify-center gap-2"
               >
