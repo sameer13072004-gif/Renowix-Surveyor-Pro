@@ -34,7 +34,12 @@ import {
   Calendar,
   LogOut,
   Bell,
-  XCircle
+  XCircle,
+  Eye,
+  EyeOff,
+  Settings,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
 import { 
   ActiveService, 
@@ -49,7 +54,6 @@ import {
 } from './types';
 import { SERVICE_DATA, DEFAULT_TERMS } from './constants';
 
-// Fix for window.google TypeScript error
 declare global {
   interface Window {
     google: any;
@@ -70,12 +74,13 @@ export default function App() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [isDirty, setIsDirty] = useState(false);
   const [currentProjectId, setCurrentProjectId] = useState<string | null>(null);
+  const [isEstimateHidden, setIsEstimateHidden] = useState(false);
+  const [editingServiceInfo, setEditingServiceInfo] = useState<{ sIdx: number; name: string; desc: string } | null>(null);
+  const [expandedServices, setExpandedServices] = useState<Record<string, boolean>>({});
   
-  // Google Auth
   const [googleToken, setGoogleToken] = useState<string | null>(null);
   const tokenClientRef = useRef<any>(null);
 
-  // Modals
   const [exitModal, setExitModal] = useState<{ show: boolean; target: PageView | null }>({ show: false, target: null });
   const [exitAppModal, setExitAppModal] = useState(false);
   const [saveModal, setSaveModal] = useState<{ show: boolean }>({ show: false });
@@ -86,19 +91,21 @@ export default function App() {
     isSaving: false
   });
 
-  // Navigation Guard: Prevent data loss on accidental reload/close
+  const toggleExpand = (id: string) => {
+    setExpandedServices(prev => ({ ...prev, [id]: !prev[id] }));
+  };
+
   useEffect(() => {
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
       if (isDirty) {
         e.preventDefault();
-        e.returnValue = ''; // Standard for modern browsers
+        e.returnValue = '';
       }
     };
     window.addEventListener('beforeunload', handleBeforeUnload);
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, [isDirty]);
 
-  // Handle back navigation with unsaved changes check
   const handleBackNavigation = (target: PageView) => {
     if (isDirty && (view === 'dashboard' || view === 'client-details' || view === 'measure')) {
       setExitModal({ show: true, target });
@@ -107,7 +114,6 @@ export default function App() {
     }
   };
 
-  // Handle device back button
   useEffect(() => {
     const handlePopState = (e: PopStateEvent) => {
       if (view === 'welcome' || view === 'setup') {
@@ -140,7 +146,6 @@ export default function App() {
     return () => window.removeEventListener('popstate', handlePopState);
   }, [view, isDirty]);
 
-  // Google Calendar Auth Init
   useEffect(() => {
     const initGsi = () => {
       if (typeof window.google === 'undefined') return;
@@ -196,7 +201,7 @@ export default function App() {
     try {
       const { project, dueDate } = reminderModal;
       const startTime = new Date(dueDate);
-      const endTime = new Date(startTime.getTime() + 30 * 60000); // 30 minutes duration
+      const endTime = new Date(startTime.getTime() + 30 * 60000);
       
       const summary = `Follow up: ${project.client.name} - Renowix`;
       const description = `Project Summary: ${project.services.map(s => s.name).join(', ')}\nSite: ${project.client.address}`;
@@ -210,24 +215,18 @@ export default function App() {
         body: JSON.stringify({
           summary,
           description,
-          start: {
-            dateTime: startTime.toISOString(),
-          },
-          end: {
-            dateTime: endTime.toISOString(),
-          },
+          start: { dateTime: startTime.toISOString() },
+          end: { dateTime: endTime.toISOString() },
           reminders: {
             useDefault: false,
-            overrides: [
-              { method: 'popup', minutes: 15 } // Ensure notification triggers 15 mins before
-            ]
+            overrides: [{ method: 'popup', minutes: 15 }]
           }
         })
       });
 
       if (!response.ok) {
         if (response.status === 401) {
-          handleGoogleSignIn(); // Re-auth
+          handleGoogleSignIn();
           throw new Error("Session expired. Please sign in again.");
         }
         throw new Error("Failed to create calendar event");
@@ -247,16 +246,7 @@ export default function App() {
     setIsDirty(false);
   };
 
-  const checkDuplicates = () => {
-    if (!currentProjectId) return false;
-    const existing = projects.find(p => p.id === currentProjectId);
-    if (!existing) return false;
-    const currentSerialized = JSON.stringify({ client, services, terms });
-    const existingSerialized = JSON.stringify({ client: existing.client, services: existing.services, terms: existing.terms });
-    return currentSerialized === existingSerialized;
-  };
-
-  const performSave = (updateExisting: boolean) => {
+  const performSave = (updateExisting: boolean, silent = false) => {
     const projectData: Project = {
       id: updateExisting && currentProjectId ? currentProjectId : Date.now().toString(),
       date: new Date().toLocaleString(),
@@ -276,13 +266,12 @@ export default function App() {
 
     saveToHistory(newHistory);
     setSaveModal({ show: false });
-    alert(updateExisting ? "Project Updated!" : "Project Saved to History!");
+    if (!silent) alert(updateExisting ? "Project Updated!" : "Project Saved to History!");
   };
 
   const handleSaveClick = () => {
     if (services.length === 0) return alert("Add at least one measurement before saving.");
     if (checkDuplicates()) {
-      alert("No changes detected. Project is up to date.");
       setIsDirty(false);
       return;
     }
@@ -294,7 +283,7 @@ export default function App() {
   };
 
   const handleExitDecision = (decision: 'yes' | 'no') => {
-    if (decision === 'yes') performSave(true);
+    if (decision === 'yes') performSave(true, true);
     setIsDirty(false);
     if (exitModal.target) setView(exitModal.target);
     setExitModal({ show: false, target: null });
@@ -311,6 +300,7 @@ export default function App() {
     if (!cat || !type) return;
 
     const newService: Partial<ActiveService> = {
+      instanceId: Date.now().toString(),
       categoryId: cat.id,
       typeId: type.id,
       name: customName || type.name,
@@ -358,11 +348,18 @@ export default function App() {
     setServices(newServices);
   };
 
+  const checkDuplicates = () => {
+    if (!currentProjectId) return false;
+    const existing = projects.find(p => p.id === currentProjectId);
+    if (!existing) return false;
+    return JSON.stringify({ client, services, terms }) === JSON.stringify({ client: existing.client, services: existing.services, terms: existing.terms });
+  };
+
   if (view === 'quote') return <QuoteView client={client} services={services} terms={terms} onBack={() => setView('dashboard')} />;
   if (view === 'measurement-sheet') return <MeasurementSheetView client={client} services={services} onBack={() => setView('dashboard')} />;
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col items-center sm:py-6 text-slate-800 font-sans">
+    <div className="min-h-screen bg-slate-50 flex flex-col items-center sm:py-6 text-slate-800 font-sans overflow-x-hidden">
       <div className="w-full max-w-xl bg-white sm:rounded-3xl shadow-2xl flex flex-col min-h-screen sm:min-h-[85vh] relative overflow-hidden border border-gray-100">
         
         {view !== 'setup' && (
@@ -514,11 +511,11 @@ export default function App() {
               <Header title="Project Details" onBack={() => handleBackNavigation('welcome')} />
               <div className="mt-8 space-y-6">
                 <div className="bg-white p-6 rounded-3xl shadow-card border border-slate-50">
-                  <InputGroup label="Client Name">
-                    <input type="text" value={client.name} onChange={e => setClient({...client, name: e.target.value})} className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none focus:border-brand-gold focus:ring-4 focus:ring-brand-gold/5 transition-all font-bold" placeholder="e.g. Mr. Rajesh Kumar" />
+                  <InputGroup label="Client Name" labelSize="text-xs">
+                    <input type="text" value={client.name} onChange={e => setClient({...client, name: e.target.value})} className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none focus:border-brand-gold focus:ring-4 focus:ring-brand-gold/5 transition-all font-bold" placeholder="e.g. Sameer" />
                   </InputGroup>
                   <div className="h-4"></div>
-                  <InputGroup label="Site Address">
+                  <InputGroup label="Site Address" labelSize="text-xs">
                     <textarea value={client.address} onChange={e => setClient({...client, address: e.target.value})} rows={3} className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none focus:border-brand-gold focus:ring-4 focus:ring-brand-gold/5 transition-all resize-none text-sm font-medium" placeholder="Full Site Address" />
                   </InputGroup>
                 </div>
@@ -530,69 +527,94 @@ export default function App() {
           {view === 'dashboard' && (
             <div className="p-4 sm:p-6 pb-44">
               <Header title="Project Dashboard" onBack={() => handleBackNavigation('client-details')} />
-              <div className="mt-4 bg-slate-800 rounded-3xl p-6 shadow-2xl relative overflow-hidden group">
-                 <div className="absolute -top-12 -right-12 w-48 h-48 bg-brand-gold/20 rounded-full blur-3xl"></div>
-                 <div className="relative z-10 flex flex-col sm:flex-row justify-between items-start sm:items-end gap-6">
-                   <div className="space-y-3">
-                     <div className="inline-flex items-center gap-2 bg-white/5 px-3 py-1.5 rounded-full border border-white/10">
-                        <User size={14} className="text-brand-gold" />
-                        <span className="text-[10px] font-black uppercase tracking-widest text-white/60">Client Profile</span>
+              
+              {/* COMPACT CLIENT CARD */}
+              <div className="mt-2 bg-slate-800 rounded-2xl p-4 shadow-xl relative overflow-hidden group border border-slate-700">
+                 <div className="absolute -top-12 -right-12 w-40 h-40 bg-brand-gold/10 rounded-full blur-3xl"></div>
+                 <div className="relative z-10 flex justify-between items-center gap-4">
+                   <div className="space-y-1 overflow-hidden">
+                     <div className="flex items-center gap-2">
+                        <div className="bg-brand-gold/10 p-1.5 rounded-lg text-brand-gold"><User size={14} /></div>
+                        <h3 className="text-lg font-display font-black text-white leading-tight truncate">{client.name || "Unnamed Client"}</h3>
                      </div>
-                     <h3 className="text-2xl font-display font-black text-white leading-none tracking-tight">{client.name || "Unnamed Client"}</h3>
                      <div className="flex items-center gap-2 text-slate-400">
-                        <MapPin size={12} className="text-brand-gold/60" />
-                        <span className="text-xs truncate max-w-[200px] font-medium italic">{client.address || 'Address details missing'}</span>
+                        <MapPin size={10} className="text-brand-gold/50" />
+                        <span className="text-[10px] truncate max-w-[150px] font-medium">{client.address || 'No Address'}</span>
                      </div>
                    </div>
-                   <div className="w-full sm:w-auto text-left sm:text-right bg-white/5 p-4 rounded-3xl border border-white/10 backdrop-blur-md">
-                      <div className="flex items-center sm:justify-end gap-2 mb-1">
-                        <Coins size={14} className="text-brand-gold" />
-                        <p className="text-[10px] uppercase text-brand-gold font-black tracking-widest">Total Estimate</p>
+                   <div className="flex flex-col items-end pr-2 bg-white/5 p-2 rounded-xl border border-white/10 backdrop-blur-sm">
+                      <div className="flex items-center gap-2 mb-0.5">
+                        <p className="text-[8px] uppercase text-brand-gold font-black tracking-widest">ESTIMATE</p>
+                        <button 
+                          onClick={() => setIsEstimateHidden(!isEstimateHidden)} 
+                          className="p-1 bg-slate-700 rounded-md hover:bg-slate-600 text-white shadow-sm transition-colors border border-slate-600"
+                          title={isEstimateHidden ? "Unhide" : "Hide"}
+                        >
+                          {isEstimateHidden ? <EyeOff size={10} /> : <Eye size={10} />}
+                        </button>
                       </div>
-                      <p className="text-4xl font-display font-black text-white leading-none"><span className="text-xl font-sans mr-1 opacity-50 font-normal">₹</span>{Math.round(services.reduce((sum, s) => sum + s.items.reduce((is, i) => is + i.cost, 0), 0)).toLocaleString()}</p>
+                      <p className={`text-2xl font-display font-black text-white leading-none transition-all ${isEstimateHidden ? 'masked-estimate' : ''}`}>
+                        <span className="text-sm font-sans mr-0.5 opacity-50 font-normal">₹</span>
+                        {Math.round(services.reduce((sum, s) => sum + s.items.reduce((is, i) => is + i.cost, 0), 0)).toLocaleString()}
+                      </p>
                    </div>
                  </div>
               </div>
 
-              <div className="mt-10 space-y-4">
+              <div className="mt-8 space-y-4">
                 <div className="flex items-center justify-between px-1">
                    <h3 className="font-black text-slate-800 flex items-center gap-2 uppercase text-xs tracking-widest opacity-60"><Layers size={16} className="text-brand-gold" />Service Items</h3>
                 </div>
-                {services.map((s, sIdx) => (
-                  <div key={sIdx} className="bg-white border-l-4 border-l-yellow-500 rounded-3xl shadow-card overflow-hidden border border-slate-100">
-                    <div className="bg-white p-4 border-b border-slate-50 flex justify-between items-center">
-                      <div className="flex items-center gap-3">
-                        <ServiceIcon categoryId={s.categoryId} typeId={s.typeId} name={s.name} />
-                        <div>
-                          <h4 className="font-black text-slate-800 text-sm tracking-tight">{s.name}</h4>
-                          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{s.items.reduce((a,b)=>a+b.netArea,0).toFixed(2)} {s.unit}</p>
+                {services.map((s, sIdx) => {
+                  const isExpanded = expandedServices[s.instanceId];
+                  return (
+                    <div key={s.instanceId} className="bg-white border-l-4 border-l-yellow-500 rounded-3xl shadow-card overflow-hidden border border-slate-100 transition-all duration-200">
+                      <div 
+                        className="bg-white p-4 border-b border-slate-50 flex justify-between items-center cursor-pointer hover:bg-slate-50"
+                        onClick={() => toggleExpand(s.instanceId)}
+                      >
+                        <div className="flex items-center gap-3">
+                          <ServiceIcon categoryId={s.categoryId} typeId={s.typeId} name={s.name} />
+                          <div className="max-w-[140px] sm:max-w-none">
+                            <h4 className="font-black text-slate-800 text-sm tracking-tight leading-tight truncate">{s.name}</h4>
+                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{s.items.reduce((a,b)=>a+b.netArea,0).toFixed(2)} {s.unit}</p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <span className={`font-black text-slate-900 text-sm ${isEstimateHidden ? 'masked-estimate' : ''}`}>
+                            ₹ {Math.round(s.items.reduce((a,b)=>a+b.cost,0)).toLocaleString()}
+                          </span>
+                          <div className="flex items-center gap-1">
+                             <button onClick={(e) => { e.stopPropagation(); setEditingServiceInfo({ sIdx, name: s.name, desc: s.desc }); }} className="p-2 text-slate-400 hover:text-slate-800 transition-colors"><Settings size={16} /></button>
+                             <button onClick={(e) => { e.stopPropagation(); confirm("Remove this category?") && setServices(services.filter((_,i) => i !== sIdx)); }} className="p-2 text-slate-300 hover:text-red-600 transition-colors"><Trash2 size={16} /></button>
+                             {isExpanded ? <ChevronUp size={20} className="text-slate-400 ml-1" /> : <ChevronDown size={20} className="text-slate-400 ml-1" />}
+                          </div>
                         </div>
                       </div>
-                      <div className="flex items-center gap-3">
-                        <span className="font-black text-slate-900 text-sm">₹ {Math.round(s.items.reduce((a,b)=>a+b.cost,0)).toLocaleString()}</span>
-                        <button onClick={() => confirm("Remove this category?") && setServices(services.filter((_,i) => i !== sIdx))} className="p-2 text-slate-300 hover:text-red-600 transition-colors"><Trash2 size={16} /></button>
-                      </div>
-                    </div>
-                    <div className="divide-y divide-slate-50">
-                      {s.items.map((item, iIdx) => (
-                        <div key={item.id} className="p-4 flex justify-between items-center hover:bg-slate-50/50">
-                           <div>
-                             <p className="font-bold text-slate-700 text-sm">{item.name}</p>
-                             <p className="text-[10px] font-bold text-slate-400 mt-0.5 tracking-wider">₹{item.rate} / {s.unit.toUpperCase()}</p>
-                           </div>
-                           <div className="flex items-center gap-3">
-                              <span className="font-black text-slate-800 text-sm">₹{Math.round(item.cost).toLocaleString()}</span>
-                              <div className="flex gap-1">
-                                <button onClick={() => editItem(sIdx, iIdx)} className="p-2 text-blue-600 bg-blue-50 rounded-xl hover:bg-blue-100"><Edit2 size={14} /></button>
-                                <button onClick={() => deleteItem(sIdx, iIdx)} className="p-2 text-red-600 bg-red-50 rounded-xl hover:bg-red-100"><Trash2 size={14} /></button>
-                              </div>
-                           </div>
+                      
+                      {isExpanded && (
+                        <div className="divide-y divide-slate-50">
+                          {s.items.map((item, iIdx) => (
+                            <div key={item.id} className="p-4 flex justify-between items-center hover:bg-slate-50/50">
+                               <div>
+                                 <p className="font-bold text-slate-700 text-sm">{item.name}</p>
+                                 <p className="text-[10px] font-bold text-slate-400 mt-0.5 tracking-wider">₹{item.rate} / {s.unit.toUpperCase()}</p>
+                               </div>
+                               <div className="flex items-center gap-3">
+                                  <span className={`font-black text-slate-800 text-sm ${isEstimateHidden ? 'masked-estimate' : ''}`}>₹{Math.round(item.cost).toLocaleString()}</span>
+                                  <div className="flex gap-1">
+                                    <button onClick={() => editItem(sIdx, iIdx)} className="p-2 text-blue-600 bg-blue-50 rounded-xl hover:bg-blue-100"><Edit2 size={14} /></button>
+                                    <button onClick={() => deleteItem(sIdx, iIdx)} className="p-2 text-red-600 bg-red-50 rounded-xl hover:bg-red-100"><Trash2 size={14} /></button>
+                                  </div>
+                               </div>
+                            </div>
+                          ))}
+                          <button onClick={() => { setTempService({...s}); setEditingItemIndex(null); setView('measure'); }} className="w-full py-3 bg-slate-50 text-[10px] font-black text-slate-400 border-t border-slate-100 uppercase tracking-[0.2em] hover:text-brand-gold hover:bg-white transition-all">+ Add Section</button>
                         </div>
-                      ))}
+                      )}
                     </div>
-                    <button onClick={() => { setTempService({...s}); setEditingItemIndex(null); setView('measure'); }} className="w-full py-3 bg-slate-50 text-[10px] font-black text-slate-400 border-t border-slate-100 uppercase tracking-[0.2em] hover:text-brand-gold hover:bg-white transition-all">+ Add Section</button>
-                  </div>
-                ))}
+                  );
+                })}
                 <button onClick={() => setView('service-select')} className="w-full py-5 border-2 border-dashed border-slate-200 text-slate-400 rounded-3xl font-black flex items-center justify-center gap-2 hover:border-brand-gold hover:text-brand-gold hover:bg-yellow-50/30 transition-all active:scale-[0.98] uppercase text-xs tracking-widest"><PlusCircle size={20} /> Add Service Category</button>
               </div>
 
@@ -613,9 +635,44 @@ export default function App() {
           )}
 
           {view === 'service-select' && <ServiceSelector onBack={() => setView('dashboard')} onSelect={handleAddService} />}
-          {view === 'measure' && tempService && <MeasurementForm serviceContext={tempService} editingItem={editingItemIndex !== null && tempService.items ? tempService.items[editingItemIndex.iIdx] : undefined} onBack={() => setView('dashboard')} onSave={handleSaveMeasurement} />}
+          {view === 'measure' && tempService && (
+            <MeasurementForm 
+              serviceContext={tempService} 
+              editingItem={editingItemIndex !== null && tempService.items ? tempService.items[editingItemIndex.iIdx] : undefined} 
+              onBack={() => setView('dashboard')} 
+              onSave={handleSaveMeasurement} 
+            />
+          )}
         </div>
       </div>
+
+      {/* EDIT SERVICE CATEGORY MODAL */}
+      {editingServiceInfo && (
+        <div className="fixed inset-0 z-[250] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+          <div className="w-full max-w-sm bg-white rounded-3xl p-6 shadow-2xl border border-slate-100">
+            <div className="mb-6">
+              <h3 className="text-xl font-black text-slate-800 mb-4 flex items-center gap-2"><Settings size={20} className="text-brand-gold" /> Category Info</h3>
+              <InputGroup label="Display Name">
+                <input type="text" className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none font-bold" value={editingServiceInfo.name} onChange={e => setEditingServiceInfo({ ...editingServiceInfo, name: e.target.value })} />
+              </InputGroup>
+              <div className="h-4"></div>
+              <InputGroup label="Service Description">
+                <textarea rows={4} className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none text-sm font-medium" value={editingServiceInfo.desc} onChange={e => setEditingServiceInfo({ ...editingServiceInfo, desc: e.target.value })} />
+              </InputGroup>
+            </div>
+            <div className="flex gap-2">
+              <button onClick={() => setEditingServiceInfo(null)} className="flex-1 py-4 bg-slate-100 text-slate-600 rounded-2xl font-black text-xs uppercase tracking-widest">Cancel</button>
+              <button onClick={() => {
+                const newServices = [...services];
+                newServices[editingServiceInfo.sIdx].name = editingServiceInfo.name;
+                newServices[editingServiceInfo.sIdx].desc = editingServiceInfo.desc;
+                setServices(newServices);
+                setEditingServiceInfo(null);
+              }} className="flex-1 py-4 bg-slate-800 text-white rounded-2xl font-black text-xs uppercase tracking-widest">Update</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* EXIT APP MODAL */}
       {exitAppModal && (
@@ -637,48 +694,10 @@ export default function App() {
                 Cancel
               </button>
               <button 
-                onClick={() => window.close()} // Note: browsers often block window.close() unless opened by script, but it's the standard intent
+                onClick={() => window.close()} 
                 className="flex-1 py-4 bg-red-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-red-700 transition-all shadow-lg"
               >
                 Yes, Exit
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* REMINDER MODAL (Google Calendar Integration) */}
-      {reminderModal.show && (
-        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
-          <div className="w-full max-w-sm bg-white rounded-3xl p-6 shadow-2xl border border-slate-100">
-            <div className="flex flex-col items-center text-center mb-6">
-              <div className="bg-brand-gold/10 text-brand-gold p-4 rounded-full mb-4 shadow-inner"><Calendar size={32} /></div>
-              <h3 className="text-xl font-black text-slate-800 mb-2">📅 Set Follow-up Reminder</h3>
-              <p className="text-sm font-medium text-slate-500">Pick a date/time to be reminded to follow up with <strong>{reminderModal.project?.client.name}</strong>.</p>
-            </div>
-            <div className="mb-6">
-              <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest block mb-2">Reminder Date & Time</label>
-              <input 
-                type="datetime-local" 
-                className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none focus:ring-4 focus:ring-brand-gold/10 font-bold"
-                value={reminderModal.dueDate}
-                onChange={e => setReminderModal(prev => ({ ...prev, dueDate: e.target.value }))}
-              />
-            </div>
-            <div className="flex gap-3">
-              <button 
-                onClick={() => setReminderModal({ show: false, project: null, dueDate: '', isSaving: false })}
-                className="flex-1 py-4 bg-slate-100 text-slate-600 rounded-2xl font-black text-xs uppercase tracking-widest"
-              >
-                Cancel
-              </button>
-              <button 
-                onClick={createCalendarEvent}
-                disabled={reminderModal.isSaving}
-                className="flex-[2] py-4 bg-slate-800 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-slate-700 transition-all flex items-center justify-center gap-2"
-              >
-                {reminderModal.isSaving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />} 
-                {reminderModal.isSaving ? 'Scheduling...' : 'Set Reminder'}
               </button>
             </div>
           </div>
@@ -697,27 +716,25 @@ export default function App() {
               <p className="text-sm font-medium text-slate-500">You have unsaved measurements. Leaving now will discard all new data.</p>
             </div>
             
-            <div className="flex gap-3">
+            <div className="flex gap-2">
               <button 
                 onClick={() => setExitModal({ show: false, target: null })}
                 className="flex-1 py-4 bg-slate-100 text-slate-600 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-slate-200 transition-all"
               >
                 Cancel
               </button>
-              <div className="flex-[2] flex gap-2">
-                <button 
-                  onClick={() => handleExitDecision('no')}
-                  className="flex-1 py-4 bg-red-50 text-red-600 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-red-100 transition-all"
-                >
-                  No
-                </button>
-                <button 
-                  onClick={() => handleExitDecision('yes')}
-                  className="flex-1 py-4 bg-slate-800 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-slate-700 transition-all shadow-lg"
-                >
-                  Yes
-                </button>
-              </div>
+              <button 
+                onClick={() => handleExitDecision('no')}
+                className="flex-1 py-4 bg-red-50 text-red-600 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-red-100 transition-all"
+              >
+                Don't Save
+              </button>
+              <button 
+                onClick={() => handleExitDecision('yes')}
+                className="flex-1 py-4 bg-slate-800 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-slate-700 transition-all shadow-lg"
+              >
+                Save
+              </button>
             </div>
           </div>
         </div>
@@ -753,17 +770,17 @@ function Header({ title, onBack }: { title: string, onBack: () => void }) {
   return (
     <div className="flex items-center gap-4 py-2 mb-4">
       <button onClick={onBack} className="p-3 -ml-3 text-slate-400 hover:text-slate-800 bg-white shadow-sm border border-slate-100 rounded-xl"><ArrowLeft size={20} /></button>
-      <h1 className="font-display font-black text-xl text-slate-800 tracking-tight">{title}</h1>
+      <h1 className="font-display font-black text-xl text-slate-800 tracking-tight leading-tight uppercase truncate">{title}</h1>
     </div>
   );
 }
 
 function Footer({ children }: { children?: React.ReactNode }) {
-  return (<div className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-xl bg-white/95 backdrop-blur-md p-4 border-t border-slate-100 z-[100] shadow-2xl">{children}</div>);
+  return (<div className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-xl bg-white/95 backdrop-blur-md p-4 border-t border-slate-100 z-[100] shadow-2xl safe-bottom">{children}</div>);
 }
 
-function InputGroup({ label, children }: { label: string, children?: React.ReactNode }) {
-  return (<div className="space-y-1.5"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">{label}</label>{children}</div>);
+function InputGroup({ label, children, labelSize = "text-base font-black" }: { label: string, children?: React.ReactNode, labelSize?: string }) {
+  return (<div className="space-y-2"><label className={`${labelSize} text-slate-400 uppercase tracking-widest ml-1`}>{label}</label>{children}</div>);
 }
 
 function ServiceSelector({ onBack, onSelect }: { onBack: () => void, onSelect: (c:string, t:string, customN?:string, customD?:string) => void }) {
@@ -773,7 +790,14 @@ function ServiceSelector({ onBack, onSelect }: { onBack: () => void, onSelect: (
   const [description, setDescription] = useState('');
   const [isAiLoading, setIsAiLoading] = useState(false);
 
-  useEffect(() => { setType(cat === 'custom' ? 'custom_item' : ''); }, [cat]);
+  useEffect(() => { 
+    if (cat === 'custom') {
+      setType('custom_item');
+    } else {
+      setType('');
+    }
+  }, [cat]);
+
   useEffect(() => {
     if (cat && type && cat !== 'custom') {
        const typeItem = SERVICE_DATA[cat]?.items.find(i => i.id === type);
@@ -843,7 +867,7 @@ function MeasurementForm({ serviceContext, editingItem, onBack, onSave }: { serv
   const [extraAreas, setExtraAreas] = useState<CeilingSection[]>(editingItem?.extraAreas || []);
   const [cabinetSections, setCabinetSections] = useState<CabinetSection[]>(editingItem?.cabinetSections || []);
   const [deductions, setDeductions] = useState<Deduction[]>(editingItem?.deductions || []);
-  const [height, setHeight] = useState<number>(editingItem?.height || 10);
+  const [height, setHeight] = useState<number>(editingItem?.height || 9);
   const [l, setL] = useState<number>(editingItem?.l || 0);
   const [b, setB] = useState<number>(editingItem?.b || 0);
   const [q, setQ] = useState<number>(editingItem?.q || 1);
@@ -858,7 +882,13 @@ function MeasurementForm({ serviceContext, editingItem, onBack, onSave }: { serv
   }, []);
 
   const calculateTotal = (): number => {
-    if (isWoodwork) return cabinetSections.reduce((acc, s) => acc + ((s.l || 0) * (s.b || 0) * (s.q || 1)), 0);
+    if (isWoodwork) {
+      const area = cabinetSections.reduce((acc, s) => {
+        const itemArea = (s.l || 0) * (s.b || 0);
+        return acc + (itemArea > 0 ? itemArea * (s.q || 1) : (s.q || 1));
+      }, 0);
+      return area;
+    }
     if (serviceContext.categoryId === 'painting') {
       const wArea = walls.reduce((s, w) => s + (w.width || 0), 0) * height;
       const cArea = ceilings.reduce((s, c) => s + (c.l * c.b), 0);
@@ -866,98 +896,144 @@ function MeasurementForm({ serviceContext, editingItem, onBack, onSave }: { serv
       const dArea = deductions.reduce((s, d) => s + (d.area * d.qty), 0);
       return Math.max(0, wArea + cArea + eArea - dArea);
     }
-    return (l || 0) * (b || 1) * (q || 1) || (l * q);
+    const area = (l || 0) * (b || 0);
+    return area > 0 ? area * (q || 1) : (q || 1);
   };
 
   const netArea = calculateTotal();
   const cost = netArea * rate;
 
   return (
-    <div className="p-6 pb-64">
-      <Header title="Measurement" onBack={onBack} />
-      <div className="space-y-6">
-        <InputGroup label="Room / Main Label"><input className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl focus:ring-4 focus:ring-brand-gold/10 outline-none transition-all font-bold" value={name} onChange={e => setName(e.target.value)} placeholder={serviceContext.isKitchen ? "e.g. Master Kitchen" : "e.g. Room 1"} /></InputGroup>
-        <InputGroup label="Rate (₹)"><input type="number" className="w-full p-4 bg-yellow-50 border border-yellow-100 rounded-2xl font-black text-xl focus:ring-4 focus:ring-brand-gold/10 outline-none" value={rate || ''} onChange={e => setRate(parseFloat(e.target.value) || 0)} /></InputGroup>
-        {isWoodwork && (
-          <div className="space-y-4">
-             <div className="flex justify-between items-center px-1"><span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Dimensions / Sections</span><button onClick={() => setCabinetSections([...cabinetSections, { id: Date.now().toString(), name: `Section ${cabinetSections.length + 1}`, l: 0, b: 0, q: 1 }])} className="text-[10px] font-black text-yellow-600 bg-yellow-50 px-4 py-2 rounded-full border border-yellow-100 hover:bg-yellow-100 transition-all"><Plus size={12} /> Add Section</button></div>
-             <div className="space-y-4">
-               {cabinetSections.map((s, idx) => (
-                 <div key={s.id} className="bg-white p-5 rounded-3xl border border-slate-100 shadow-sm">
-                   <div className="flex justify-between items-center mb-4"><input className="text-sm font-black text-slate-800 bg-transparent border-none focus:ring-0 w-full outline-none" value={s.name} onChange={e => setCabinetSections(cabinetSections.map(sec => sec.id === s.id ? {...sec, name: e.target.value} : sec))} />{cabinetSections.length > 1 && (<button onClick={() => setCabinetSections(cabinetSections.filter(sec => sec.id !== s.id))} className="text-slate-300 hover:text-red-500"><Trash2 size={16} /></button>)}</div>
-                   <div className="grid grid-cols-3 gap-4">
-                     <div className="space-y-1"><label className="text-[8px] text-slate-400 font-black uppercase">Length (ft)</label><input type="number" className="w-full p-3 bg-slate-50 rounded-xl text-sm font-black text-center" value={s.l || ''} onChange={e => setCabinetSections(cabinetSections.map(sec => sec.id === s.id ? {...sec, l: parseFloat(e.target.value) || 0} : sec))} /></div>
-                     <div className="space-y-1"><label className="text-[8px] text-slate-400 font-black uppercase">Breadth (ft)</label><input type="number" className="w-full p-3 bg-slate-50 rounded-xl text-sm font-black text-center" value={s.b || ''} onChange={e => setCabinetSections(cabinetSections.map(sec => sec.id === s.id ? {...sec, b: parseFloat(e.target.value) || 0} : sec))} /></div>
-                     <div className="space-y-1"><label className="text-[8px] text-slate-400 font-black uppercase">Qty</label><input type="number" className="w-full p-3 bg-slate-50 rounded-xl text-sm font-black text-center text-brand-gold" value={s.q || ''} onChange={e => setCabinetSections(cabinetSections.map(sec => sec.id === s.id ? {...sec, q: parseFloat(e.target.value) || 0} : sec))} /></div>
-                   </div>
-                 </div>
-               ))}
-             </div>
-          </div>
-        )}
-        {serviceContext.categoryId === 'painting' && (
-          <div className="space-y-4">
-             <InputGroup label="Standard Height (ft)"><input type="number" className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none focus:ring-4 focus:ring-brand-gold/5 font-black text-lg" value={height} onChange={e => setHeight(parseFloat(e.target.value))}/></InputGroup>
-             <div className="bg-white p-5 rounded-3xl shadow-sm border border-slate-100">
-               <div className="flex justify-between items-center mb-4"><span className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Wall Widths</span><button onClick={() => setWalls([...walls, {id: Date.now().toString(), width: 0}])} className="text-[10px] font-black text-yellow-600 hover:text-yellow-700 uppercase">+ Wall</button></div>
-               <div className="grid grid-cols-2 gap-3">
-                 {walls.map((w, idx) => <input key={w.id} type="number" className="p-4 border border-slate-100 rounded-2xl text-center bg-slate-50 focus:bg-white focus:ring-2 focus:ring-brand-gold/10 transition-all font-bold" value={w.width || ''} placeholder={`W ${idx+1}`} onChange={e => { const nw = [...walls]; nw[idx].width = parseFloat(e.target.value) || 0; setWalls(nw); }} />)}
-               </div>
-             </div>
-             <div className="grid grid-cols-1 gap-4">
-                <div className="bg-white p-5 rounded-3xl shadow-sm border border-slate-100">
-                  <div className="flex justify-between items-center mb-4"><span className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Ceiling Area</span><button onClick={() => setCeilings([...ceilings, { id: Date.now().toString(), l: 0, b: 0 }])} className="text-[10px] font-black text-yellow-600 hover:text-yellow-700 uppercase">+ Area</button></div>
-                  <div className="space-y-2">
-                    {ceilings.map((c, idx) => (
-                      <div key={c.id} className="flex gap-2 items-center bg-slate-50 p-2 rounded-2xl border border-transparent hover:border-brand-gold/10 transition-colors">
-                        <input type="number" className="w-full p-2 bg-transparent text-xs font-black outline-none text-center" value={c.l || ''} placeholder="L" onChange={e => { const nc = [...ceilings]; nc[idx].l = parseFloat(e.target.value) || 0; setCeilings(nc); }} />
-                        <span className="text-slate-300 font-black text-[10px]">×</span>
-                        <input type="number" className="w-full p-2 bg-transparent text-xs font-black outline-none text-center" value={c.b || ''} placeholder="B" onChange={e => { const nc = [...ceilings]; nc[idx].b = parseFloat(e.target.value) || 0; setCeilings(nc); }} />
-                        <button onClick={() => setCeilings(ceilings.filter((_,i) => i !== idx))} className="text-slate-300 hover:text-red-500 p-2 transition-colors"><Trash2 size={14}/></button>
-                      </div>
-                    ))}
+    <div className="flex flex-col min-h-full relative bg-slate-50">
+      <div className="p-6 flex-1 overflow-y-auto no-scrollbar scroll-smooth">
+        <Header title={serviceContext.name || "Measurement"} onBack={onBack} />
+        <div className="space-y-8 pb-72">
+          <InputGroup label="ROOM / MAIN LABEL"><input className="w-full p-4 bg-white border border-slate-200 rounded-2xl outline-none focus:ring-4 focus:ring-brand-gold/10 transition-all font-bold text-xl" value={name} onChange={e => setName(e.target.value)} placeholder={serviceContext.isKitchen ? "e.g. Master Kitchen" : "e.g. Room 1"} /></InputGroup>
+          <InputGroup label="RATE (₹)"><input type="number" className="w-full p-4 bg-yellow-50 border border-yellow-200 rounded-2xl font-black text-2xl outline-none" value={rate || ''} onChange={e => setRate(parseFloat(e.target.value) || 0)} /></InputGroup>
+          
+          {isWoodwork && (
+            <div className="space-y-4">
+              <span className="text-base font-black text-slate-400 uppercase tracking-widest ml-1">DIMENSIONS / SECTIONS</span>
+              <div className="space-y-4">
+                {cabinetSections.map((s, idx) => (
+                  <div key={s.id} className="bg-white p-5 rounded-3xl border border-slate-100 shadow-sm relative">
+                    <div className="flex justify-between items-center mb-4"><input className="text-sm font-black text-slate-800 bg-transparent border-none focus:ring-0 w-full outline-none" value={s.name} onChange={e => setCabinetSections(cabinetSections.map(sec => sec.id === s.id ? {...sec, name: e.target.value} : sec))} />{cabinetSections.length > 1 && (<button onClick={() => setCabinetSections(cabinetSections.filter(sec => sec.id !== s.id))} className="text-slate-300 hover:text-red-500"><Trash2 size={16} /></button>)}</div>
+                    <div className="grid grid-cols-3 gap-4">
+                      <div className="space-y-1"><label className="text-[10px] text-slate-400 font-black uppercase">Length (ft)</label><input type="number" className="w-full p-3 bg-slate-50 rounded-xl text-sm font-black text-center" value={s.l || ''} onChange={e => setCabinetSections(cabinetSections.map(sec => sec.id === s.id ? {...sec, l: parseFloat(e.target.value) || 0} : sec))} /></div>
+                      <div className="space-y-1"><label className="text-[10px] text-slate-400 font-black uppercase">Breadth (ft)</label><input type="number" className="w-full p-3 bg-slate-50 rounded-xl text-sm font-black text-center" value={s.b || ''} onChange={e => setCabinetSections(cabinetSections.map(sec => sec.id === s.id ? {...sec, b: parseFloat(e.target.value) || 0} : sec))} /></div>
+                      <div className="space-y-1"><label className="text-[10px] text-slate-400 font-black uppercase">Qty</label><input type="number" className="w-full p-3 bg-slate-50 rounded-xl text-sm font-black text-center text-brand-gold" value={s.q || ''} onChange={e => setCabinetSections(cabinetSections.map(sec => sec.id === s.id ? {...sec, q: parseFloat(e.target.value) || 0} : sec))} /></div>
+                    </div>
                   </div>
+                ))}
+                <div className="flex justify-end pr-1">
+                  <button onClick={() => setCabinetSections([...cabinetSections, { id: Date.now().toString(), name: `Section ${cabinetSections.length + 1}`, l: 0, b: 0, q: 1 }])} className="text-[11px] font-black text-brand-gold bg-brand-gold/5 px-4 py-2 rounded-full border border-brand-gold/20 hover:bg-brand-gold/10 transition-all flex items-center gap-1"><Plus size={12} /> ADD SECTION</button>
                 </div>
-                <div className="bg-white p-5 rounded-3xl shadow-sm border border-slate-100">
-                  <div className="flex justify-between items-center mb-4"><span className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Extra Patch Area</span><button onClick={() => setExtraAreas([...extraAreas, { id: Date.now().toString(), l: 0, b: 0 }])} className="text-[10px] font-black text-yellow-600 hover:text-yellow-700 uppercase">+ Patch</button></div>
-                  <div className="space-y-2">
-                    {extraAreas.map((ea, idx) => (
-                      <div key={ea.id} className="flex gap-2 items-center bg-slate-50 p-2 rounded-2xl border border-transparent hover:border-brand-gold/10 transition-colors">
-                        <input type="number" className="w-full p-2 bg-transparent text-xs font-black outline-none text-center" value={ea.l || ''} placeholder="L" onChange={e => { const nea = [...extraAreas]; nea[idx].l = parseFloat(e.target.value) || 0; setExtraAreas(nea); }} />
-                        <span className="text-slate-300 font-black text-[10px]">×</span>
-                        <input type="number" className="w-full p-2 bg-transparent text-xs font-black outline-none text-center" value={ea.b || ''} placeholder="B" onChange={e => { const nea = [...extraAreas]; nea[idx].b = parseFloat(e.target.value) || 0; setExtraAreas(nea); }} />
-                        <button onClick={() => setExtraAreas(extraAreas.filter((_,i) => i !== idx))} className="text-slate-300 hover:text-red-500 p-2 transition-colors"><Trash2 size={14}/></button>
-                      </div>
-                    ))}
+              </div>
+            </div>
+          )}
+
+          {serviceContext.categoryId === 'painting' && (
+            <div className="space-y-8">
+              <InputGroup label="STANDARD HEIGHT (FT)"><input type="number" className="w-full p-4 bg-white border border-slate-200 rounded-2xl outline-none font-black text-2xl" value={height} onChange={e => setHeight(parseFloat(e.target.value))}/></InputGroup>
+              
+              {/* WALL WIDTHS */}
+              <div className="bg-white p-5 rounded-3xl shadow-sm border border-slate-100">
+                <span className="text-base font-black text-slate-400 uppercase tracking-widest mb-4 block">WALL WIDTHS</span>
+                <div className="grid grid-cols-2 gap-3 mb-4">
+                  {walls.map((w, idx) => (
+                    <div key={w.id} className="relative">
+                      <input type="number" className="w-full p-4 border border-slate-100 rounded-2xl text-center bg-slate-50 focus:bg-white transition-all font-bold text-lg" value={w.width || ''} placeholder={`W ${idx+1}`} onChange={e => { const nw = [...walls]; nw[idx].width = parseFloat(e.target.value) || 0; setWalls(nw); }} />
+                      <div className="absolute top-1 left-2 text-[8px] font-black text-slate-300 uppercase">W {idx+1}</div>
+                    </div>
+                  ))}
+                </div>
+                <div className="flex justify-end">
+                  <button onClick={() => setWalls([...walls, {id: Date.now().toString(), width: 0}])} className="text-[11px] font-black text-brand-gold hover:text-yellow-700 uppercase flex items-center gap-1 px-3 py-1.5 bg-brand-gold/5 rounded-xl border border-brand-gold/10">+ ADD WALL</button>
+                </div>
+              </div>
+
+              {/* CEILING AREA */}
+              <div className="bg-white p-5 rounded-3xl shadow-sm border border-slate-100">
+                <span className="text-base font-black text-slate-400 uppercase tracking-widest mb-4 block">CEILING AREA</span>
+                <div className="space-y-3 mb-4">
+                  {ceilings.map((c, idx) => (
+                    <div key={c.id} className="flex gap-2 items-center bg-slate-50 p-3 rounded-2xl border border-transparent hover:border-brand-gold/10 transition-colors">
+                      <div className="flex-1 text-center"><label className="block text-[8px] font-black text-slate-300 mb-1">LEN</label><input type="number" className="w-full bg-transparent text-lg font-black outline-none text-center" value={c.l || ''} placeholder="0" onChange={e => { const nc = [...ceilings]; nc[idx].l = parseFloat(e.target.value) || 0; setCeilings(nc); }} /></div>
+                      <span className="text-slate-300 font-black text-lg">×</span>
+                      <div className="flex-1 text-center"><label className="block text-[8px] font-black text-slate-300 mb-1">BRD</label><input type="number" className="w-full bg-transparent text-lg font-black outline-none text-center" value={c.b || ''} placeholder="0" onChange={e => { const nc = [...ceilings]; nc[idx].b = parseFloat(e.target.value) || 0; setCeilings(nc); }} /></div>
+                      <button onClick={() => setCeilings(ceilings.filter((_,i) => i !== idx))} className="text-slate-300 hover:text-red-500 p-2 transition-colors"><Trash2 size={18}/></button>
+                    </div>
+                  ))}
+                </div>
+                <div className="flex justify-end">
+                  <button onClick={() => setCeilings([...ceilings, { id: Date.now().toString(), l: 0, b: 0 }])} className="text-[11px] font-black text-brand-gold hover:text-yellow-700 uppercase flex items-center gap-1 px-3 py-1.5 bg-brand-gold/5 rounded-xl border border-brand-gold/10">+ ADD AREA</button>
+                </div>
+              </div>
+
+              {/* EXTRA PATCH AREA */}
+              <div className="bg-white p-5 rounded-3xl shadow-sm border border-slate-100">
+                <span className="text-base font-black text-slate-400 uppercase tracking-widest mb-4 block">EXTRA PATCH AREA</span>
+                <div className="space-y-3 mb-4">
+                  {extraAreas.map((ea, idx) => (
+                    <div key={ea.id} className="flex gap-2 items-center bg-slate-50 p-3 rounded-2xl border border-transparent hover:border-brand-gold/10 transition-colors">
+                      <div className="flex-1 text-center"><label className="block text-[8px] font-black text-slate-300 mb-1">LEN</label><input type="number" className="w-full bg-transparent text-lg font-black outline-none text-center" value={ea.l || ''} placeholder="0" onChange={e => { const nea = [...extraAreas]; nea[idx].l = parseFloat(e.target.value) || 0; setExtraAreas(nea); }} /></div>
+                      <span className="text-slate-300 font-black text-lg">×</span>
+                      <div className="flex-1 text-center"><label className="block text-[8px] font-black text-slate-300 mb-1">BRD</label><input type="number" className="w-full bg-transparent text-lg font-black outline-none text-center" value={ea.b || ''} placeholder="0" onChange={e => { const nea = [...extraAreas]; nea[idx].b = parseFloat(e.target.value) || 0; setExtraAreas(nea); }} /></div>
+                      <button onClick={() => setExtraAreas(extraAreas.filter((_,i) => i !== idx))} className="text-slate-300 hover:text-red-500 p-2 transition-colors"><Trash2 size={18}/></button>
+                    </div>
+                  ))}
+                </div>
+                <div className="flex justify-end">
+                  <button onClick={() => setExtraAreas([...extraAreas, { id: Date.now().toString(), l: 0, b: 0 }])} className="text-[11px] font-black text-brand-gold hover:text-yellow-700 uppercase flex items-center gap-1 px-3 py-1.5 bg-brand-gold/5 rounded-xl border border-brand-gold/10">+ ADD PATCH</button>
+                </div>
+              </div>
+
+              {/* DEDUCTIONS */}
+              <div className="bg-white p-5 rounded-3xl shadow-sm border border-slate-100">
+                <span className="text-base font-black text-slate-400 uppercase tracking-widest mb-4 block">DEDUCTIONS</span>
+                <div className="flex gap-2 mb-6">
+                  {[ { label: 'Door', icon: DoorOpen, area: 21 }, { label: 'Window', icon: Layout, area: 12 }, { label: 'Other', icon: Plus, area: 0 } ].map(btn => (
+                    <button key={btn.label} onClick={() => setDeductions([...deductions, { id: Date.now().toString(), type: btn.label, area: btn.area, qty: 1 }])} className="flex-1 py-3 px-3 bg-slate-50 border border-slate-100 rounded-2xl flex flex-col items-center gap-2 group hover:border-brand-gold shadow-sm"><btn.icon size={18} className="text-slate-400 group-hover:text-brand-gold" /><span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">{btn.label}</span></button>
+                  ))}
+                </div>
+                {deductions.map((d, idx) => (
+                  <div key={d.id} className="flex gap-4 items-center bg-slate-50 p-4 rounded-2xl border border-slate-100 mb-2">
+                    <div className="w-14"><span className="text-[8px] font-black text-slate-300 uppercase block mb-1">#{idx+1}</span></div>
+                    <div className="flex-1"><label className="text-[8px] text-slate-400 uppercase font-black block">Area</label><input type="number" className="w-full p-1 bg-transparent text-xs font-black outline-none border-b border-slate-200" value={d.area || ''} onChange={e => setDeductions(deductions.map(dd => dd.id === d.id ? {...dd, area: parseFloat(e.target.value) || 0} : dd))} /></div>
+                    <div className="flex-1"><label className="text-[8px] text-slate-400 uppercase font-black block">Qty</label><input type="number" className="w-full p-1 bg-transparent text-xs font-black outline-none border-b border-slate-200 text-center" value={d.qty || ''} onChange={e => setDeductions(deductions.map(dd => dd.id === d.id ? {...dd, qty: parseFloat(e.target.value) || 0} : dd))} /></div>
+                    <button onClick={() => setDeductions(deductions.filter(dd => dd.id !== d.id))} className="p-2 text-slate-300 hover:text-red-500"><Trash2 size={16}/></button>
                   </div>
-                </div>
-             </div>
-             <div className="bg-white p-5 rounded-3xl shadow-sm border border-slate-100">
-               <span className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-4 block">Deductions</span>
-               <div className="flex gap-2 mb-6">
-                 {[ { label: 'Door', icon: DoorOpen, area: 21 }, { label: 'Window', icon: Layout, area: 12 }, { label: 'Other', icon: Plus, area: 0 } ].map(btn => (
-                   <button key={btn.label} onClick={() => setDeductions([...deductions, { id: Date.now().toString(), type: btn.label, area: btn.area, qty: 1 }])} className="flex-1 py-3 px-3 bg-slate-50 border border-slate-100 rounded-2xl flex flex-col items-center gap-2 group hover:border-brand-gold shadow-sm"><btn.icon size={18} className="text-slate-400 group-hover:text-brand-gold" /><span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">{btn.label}</span></button>
-                 ))}
-               </div>
-               {deductions.map((d, idx) => (
-                 <div key={d.id} className="flex gap-4 items-center bg-slate-50 p-4 rounded-2xl border border-slate-100 mb-2">
-                   <div className="w-14"><span className="text-[8px] font-black text-slate-300 uppercase block mb-1">#{idx+1}</span></div>
-                   <div className="flex-1"><label className="text-[8px] text-slate-400 uppercase font-black block">Area</label><input type="number" className="w-full p-1 bg-transparent text-xs font-black outline-none border-b border-slate-200" value={d.area || ''} onChange={e => setDeductions(deductions.map(dd => dd.id === d.id ? {...dd, area: parseFloat(e.target.value) || 0} : dd))} /></div>
-                   <div className="flex-1"><label className="text-[8px] text-slate-400 uppercase font-black block">Qty</label><input type="number" className="w-full p-1 bg-transparent text-xs font-black outline-none border-b border-slate-200 text-center" value={d.qty || ''} onChange={e => setDeductions(deductions.map(dd => dd.id === d.id ? {...dd, qty: parseFloat(e.target.value) || 0} : dd))} /></div>
-                   <button onClick={() => setDeductions(deductions.filter(dd => dd.id !== d.id))} className="p-2 text-slate-300 hover:text-red-500"><Trash2 size={16}/></button>
-                 </div>
-               ))}
-             </div>
-          </div>
-        )}
-      </div>
-      <Footer>
-        <div className="mb-4 flex justify-between items-center bg-slate-800 text-white p-5 rounded-3xl shadow-xl">
-          <div className="text-left"><p className="text-[9px] text-slate-400 uppercase font-black">Net Area</p><p className="font-black text-xl">{netArea.toFixed(2)} <span className="text-xs opacity-50">{serviceContext.unit}</span></p></div>
-          <div className="text-right"><p className="text-[9px] text-slate-400 uppercase font-black">Subtotal</p><p className="font-black text-2xl text-brand-gold">₹{Math.round(cost).toLocaleString()}</p></div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
-        <button onClick={() => onSave({ id: editingItem?.id || Date.now().toString(), name: name || "Item", netArea, rate, cost, l, b, q, height, walls, ceilings, extraAreas, cabinetSections, deductions })} className="w-full bg-slate-800 text-white py-5 rounded-3xl font-black text-lg hover:bg-slate-700 shadow-xl uppercase">Save Section</button>
-      </Footer>
+      </div>
+      
+      {/* Sticky Subtotal Bar & Large Save Button */}
+      <div className="fixed bottom-0 left-0 right-0 z-[110] w-full flex justify-center p-4 safe-bottom">
+        <div className="w-full max-w-xl flex flex-col gap-3">
+          <div className="flex justify-between items-center bg-slate-900/95 backdrop-blur-md text-white py-5 px-8 rounded-3xl shadow-2xl border border-white/5">
+            <div className="text-left">
+              <p className="text-[10px] text-slate-400 uppercase font-black tracking-[0.2em] leading-none mb-1.5">NET QUANTITY</p>
+              <div className="flex items-baseline gap-1.5">
+                <span className="font-black text-2xl leading-none">{netArea.toFixed(2)}</span>
+                <span className="text-xs opacity-40 uppercase font-bold">{serviceContext.unit}</span>
+              </div>
+            </div>
+            <div className="text-right">
+              <p className="text-[10px] text-slate-400 uppercase font-black tracking-[0.2em] leading-none mb-1.5">SUBTOTAL</p>
+              <p className="font-black text-3xl text-brand-gold leading-none">₹{Math.round(cost).toLocaleString()}</p>
+            </div>
+          </div>
+          <button 
+            onClick={() => onSave({ id: editingItem?.id || Date.now().toString(), name: name || "Item", netArea, rate, cost, l, b, q, height, walls, ceilings, extraAreas, cabinetSections, deductions })} 
+            className="w-full bg-slate-800 text-white h-16 rounded-2xl font-black text-base hover:bg-slate-700 shadow-xl uppercase tracking-[0.2em] flex items-center justify-center gap-3 transition-transform active:scale-[0.98] border-b-4 border-slate-950"
+          >
+            <CheckCircle size={24} className="text-brand-gold" /> save measurement
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -975,76 +1051,104 @@ function QuoteView({ client, services, terms: initialTerms, onBack }: { client: 
     <div className="bg-slate-100 min-h-screen flex flex-col items-center p-4 print:p-0">
       <div className="w-full max-w-[210mm] mb-6 flex justify-between no-print items-center px-2">
         <button onClick={onBack} className="bg-white px-5 py-3 rounded-2xl border border-slate-200 text-xs font-black uppercase flex items-center gap-2 shadow-sm"><ArrowLeft size={16} /> Dashboard</button>
-        <button onClick={() => window.print()} className="bg-slate-800 text-white px-6 py-3 rounded-2xl text-xs font-black uppercase flex items-center gap-2 shadow-xl hover:bg-slate-700"><Printer size={16} /> Generate PDF</button>
+        <button onClick={() => window.print()} className="bg-slate-800 text-white px-6 py-3 rounded-2xl text-xs font-black uppercase flex items-center gap-2 shadow-xl hover:bg-slate-700"><Printer size={16} /> Print Quote</button>
       </div>
-      <div className="w-full max-w-[210mm] bg-white min-h-[297mm] px-12 py-12 print:px-8 print:py-8 text-slate-900 shadow-[0_0_80px_-20px_rgba(0,0,0,0.15)] print:shadow-none flex flex-col overflow-hidden">
-        <div className="flex justify-between items-start border-b-2 border-slate-900 pb-8 mb-10">
-          <div>
-            <img src={LOGO_URL} className="h-20 print:h-16 object-contain mb-4 scale-110" />
-            <h1 className="text-3xl font-black uppercase text-slate-800">Renowix Renovations</h1>
-            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-[0.4em] mt-2">Complete Home Interior Solutions</p>
+      <div className="w-full max-w-[210mm] bg-white min-h-[297mm] px-10 py-10 print:px-6 print:py-6 text-slate-900 shadow-2xl print:shadow-none flex flex-col overflow-hidden">
+        
+        <div className="flex justify-between items-center border-b-2 border-slate-900 pb-6 mb-8">
+          <div className="flex items-center gap-6">
+            <img src={LOGO_URL} className="h-20 object-contain" />
+            <div>
+              <h1 className="text-3xl font-black uppercase text-slate-800 leading-none mb-1">Renowix Renovations</h1>
+              <p className="text-[11px] text-slate-400 font-bold uppercase tracking-[0.3em]">Complete Home Interior Solutions</p>
+            </div>
           </div>
           <div className="text-right">
-            <h2 className="text-6xl font-black text-slate-100 print:text-slate-200 uppercase tracking-tighter">Quote</h2>
-            <div className="space-y-1.5 pr-2">
-              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Reference</p>
-              <p className="font-black text-sm text-slate-800">#RX-{Math.floor(Date.now() / 10000).toString().slice(-6)}</p>
-              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-3">Date</p>
-              <p className="font-bold text-xs text-slate-600">{date}</p>
+            <h2 className="text-5xl font-black text-slate-100 print:text-slate-200 uppercase tracking-tighter leading-none">Quote</h2>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-8 mb-8">
+          <div className="p-5 bg-slate-50 border border-slate-100 rounded-2xl">
+            <h4 className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em] mb-3 border-b pb-1">Client Profile</h4>
+            <p className="text-xl font-black text-slate-800 leading-tight mb-1">{client.name}</p>
+            <p className="text-[11px] font-medium text-slate-500 whitespace-pre-wrap leading-relaxed italic">{client.address || "Address details pending"}</p>
+          </div>
+          <div className="p-5 bg-slate-50 border border-slate-100 rounded-2xl">
+            <h4 className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em] mb-3 border-b pb-1">Project Metadata</h4>
+            <div className="space-y-2">
+              <div className="flex justify-between items-baseline"><span className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Quote Reference</span><span className="text-xs font-black text-slate-800">#RX-{Math.floor(Date.now() / 10000).toString().slice(-6)}</span></div>
+              <div className="flex justify-between items-baseline"><span className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Document Date</span><span className="text-xs font-black text-slate-800">{date}</span></div>
             </div>
           </div>
         </div>
-        <div className="grid grid-cols-2 gap-12 mb-12">
-          <div className="p-6 bg-slate-50/50 border border-slate-100 rounded-3xl shadow-inner"><h4 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em] mb-4 border-b pb-1">Client</h4><p className="text-2xl font-black text-slate-800 mb-1">{client.name}</p><p className="text-[10px] text-brand-gold font-black uppercase">Preferred Account</p></div>
-          <div className="p-6 bg-slate-50/50 border border-slate-100 rounded-3xl shadow-inner"><h4 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em] mb-4 border-b pb-1">Site Map</h4><p className="text-[11px] font-bold text-slate-500 italic whitespace-pre-wrap">{client.address || "Address pending"}</p></div>
-        </div>
-        <div className="flex-1 overflow-hidden">
-          <table className="w-full text-sm border-collapse">
-            <thead className="bg-slate-800 text-white">
-              <tr>
-                <th className="py-4 px-4 text-left font-black text-[13px] uppercase tracking-[0.2em] w-12 border-r border-white/5">#</th>
-                <th className="py-4 px-5 text-left font-black text-[13px] uppercase tracking-[0.2em] border-r border-white/5">Service Profile & Location</th>
-                <th className="py-4 px-4 text-right font-black text-[13px] uppercase tracking-[0.2em] w-28 border-r border-white/5">Qty</th>
-                <th className="py-4 px-4 text-right font-black text-[13px] uppercase tracking-[0.2em] w-24 border-r border-white/5">Rate</th>
-                <th className="py-4 px-5 text-right font-black text-[13px] uppercase tracking-[0.2em] w-36 whitespace-nowrap">Amount (₹)</th>
+
+        <div className="flex-1">
+          <table className="w-full text-xs border-collapse overflow-hidden rounded-t-xl border border-slate-200">
+            <thead>
+              <tr className="bg-slate-800 text-white">
+                <th className="py-4 px-3 text-left font-black uppercase tracking-widest w-12 border-r border-white/5">#</th>
+                <th className="py-4 px-4 text-left font-black uppercase tracking-widest border-r border-white/5">Service Detail & Site Rooms</th>
+                <th className="py-4 px-3 text-right font-black uppercase tracking-widest w-20 border-r border-white/5">Qty</th>
+                <th className="py-4 px-3 text-right font-black uppercase tracking-widest w-24 border-r border-white/5">Rate</th>
+                <th className="py-4 px-4 text-right font-black uppercase tracking-widest w-32">Amount (₹)</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100 border-x border-b border-slate-100">
+            <tbody>
               {services.map((s, idx) => (
-                <tr key={idx} className="break-inside-avoid">
-                  <td className="py-6 px-4 align-top font-black text-slate-200 text-xs border-r border-slate-50">{(idx + 1)}</td>
-                  <td className="py-6 px-5 align-top border-r border-slate-50">
-                    <p className="font-black text-slate-800 mb-1.5 uppercase tracking-tight text-sm leading-tight"><strong>{s.name}</strong></p>
-                    <p className="text-[9px] text-slate-400 leading-normal font-bold italic mb-4 max-w-sm">{s.desc}</p>
-                    <div className="space-y-1.5">{s.items.map((item, iIdx) => (<div key={iIdx} className="flex justify-between items-center text-[10px] bg-white px-3 py-1.5 rounded-xl border border-slate-100 text-slate-600 shadow-sm"><span className="font-bold opacity-70">{item.name}</span><span className="font-black text-[9px] text-slate-400 uppercase">{item.netArea.toFixed(2)} {s.unit}</span></div>))}</div>
+                <tr key={idx} className="border-b border-slate-100 break-inside-avoid">
+                  <td className="py-6 px-3 align-top font-black text-slate-300">{(idx + 1)}</td>
+                  <td className="py-6 px-4 align-top">
+                    <p className="font-black text-slate-800 mb-1 uppercase tracking-tight text-sm"><strong>{s.name}</strong></p>
+                    <p className="text-[9px] text-slate-400 leading-relaxed font-bold italic mb-4 max-w-sm">{s.desc}</p>
+                    
+                    {/* Integrated Room List Row */}
+                    <div className="flex flex-wrap gap-x-1 items-center bg-slate-50 p-2.5 rounded-xl border border-slate-200/50">
+                      <span className="text-[8px] font-black uppercase text-slate-400 mr-1.5 underline decoration-brand-gold/30">Rooms Included:</span>
+                      <p className="text-[10px] font-black text-slate-700 leading-none">
+                        {s.items.map(item => item.name).join(', ')}
+                      </p>
+                    </div>
                   </td>
-                  <td className="py-6 px-4 align-top text-right font-black text-slate-800 text-sm border-r border-slate-50">{s.items.reduce((a, b) => a + b.netArea, 0).toFixed(2)}</td>
-                  <td className="py-6 px-4 align-top text-right font-bold text-slate-400 text-xs border-r border-slate-50">₹{s.items[0]?.rate.toLocaleString()}</td>
-                  <td className="py-6 px-5 align-top text-right font-black text-slate-800 text-sm whitespace-nowrap">₹{Math.round(s.items.reduce((a, b) => a + b.cost, 0)).toLocaleString()}</td>
+                  <td className="py-6 px-3 align-top text-right font-black text-slate-800">{s.items.reduce((a, b) => a + b.netArea, 0).toFixed(2)}</td>
+                  <td className="py-6 px-3 align-top text-right font-bold text-slate-400">₹{s.items[0]?.rate.toLocaleString()}</td>
+                  <td className="py-6 px-4 align-top text-right font-black text-slate-800">₹{Math.round(s.items.reduce((a, b) => a + b.cost, 0)).toLocaleString()}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
-        <div className="mt-10 flex flex-col items-end gap-6">
-          <div className="w-full max-w-md no-print bg-slate-50 p-6 rounded-3xl border border-slate-100 shadow-inner">
-             <div className="flex items-center justify-between mb-4"><span className="text-[10px] font-black uppercase text-slate-400">Promotions</span><div className="flex gap-1.5">{['none', 'percent', 'fixed'].map(opt => (<button key={opt} onClick={() => setDiscountType(opt as any)} className={`px-4 py-2 rounded-2xl text-[10px] font-black uppercase transition-all ${discountType === opt ? 'bg-slate-800 text-white shadow-lg' : 'bg-white border border-slate-200 text-slate-400'}`}>{opt}</button>))}</div></div>
-             {discountType !== 'none' && (<div className="flex items-center gap-3"><div className="relative flex-1"><input type="number" value={discountValue || ''} onChange={e => setDiscountValue(parseFloat(e.target.value) || 0)} className="w-full p-4 pl-10 rounded-2xl border border-slate-200 bg-white text-sm font-black outline-none" placeholder={discountType === 'percent' ? "%" : "₹"} /><div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300">{discountType === 'percent' ? <Percent size={16}/> : <CircleDollarSign size={16}/>}</div></div><div className="text-[13px] font-black text-brand-gold bg-white px-4 py-4 rounded-2xl border border-slate-100">- ₹{Math.round(discountAmount).toLocaleString()}</div></div>)}
+
+        <div className="mt-10 flex flex-col items-end gap-5 break-inside-avoid">
+          {/* Discount Logic Block */}
+          <div className="w-full max-w-xs no-print bg-slate-50 p-4 rounded-2xl border border-slate-100">
+             <div className="flex items-center justify-between mb-3"><span className="text-[9px] font-black uppercase text-slate-400 tracking-widest">Update Discount</span><div className="flex gap-1">{['none', 'percent', 'fixed'].map(opt => (<button key={opt} onClick={() => setDiscountType(opt as any)} className={`px-3 py-1.5 rounded-lg text-[8px] font-black uppercase transition-all ${discountType === opt ? 'bg-slate-800 text-white' : 'bg-white border border-slate-200 text-slate-400'}`}>{opt}</button>))}</div></div>
+             {discountType !== 'none' && (<div className="flex items-center gap-2"><div className="relative flex-1"><input type="number" value={discountValue || ''} onChange={e => setDiscountValue(parseFloat(e.target.value) || 0)} className="w-full p-2.5 pl-8 rounded-lg border border-slate-200 bg-white text-xs font-black outline-none" placeholder={discountType === 'percent' ? "%" : "₹"} /><div className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-300">{discountType === 'percent' ? <Percent size={14}/> : <CircleDollarSign size={14}/>}</div></div><div className="text-[11px] font-black text-brand-gold bg-white px-3 py-2.5 rounded-lg border border-slate-100">- ₹{Math.round(discountAmount).toLocaleString()}</div></div>)}
           </div>
-          <div className="w-72">
-            <div className="flex justify-between py-2.5 px-5 border-b border-slate-100"><span className="text-[10px] font-black text-slate-300 uppercase">Sub-Total</span><span className="font-black text-sm text-slate-500">₹{Math.round(subTotal).toLocaleString()}</span></div>
-            {discountAmount > 0 && (<div className="flex justify-between py-2.5 px-5 border-b border-slate-100"><span className="text-[10px] font-black text-brand-gold uppercase">Discount</span><span className="font-black text-sm text-brand-gold">(-) ₹{Math.round(discountAmount).toLocaleString()}</span></div>)}
-            <div className="flex justify-between py-2.5 px-5 border-b border-slate-100"><span className="text-[10px] font-black text-slate-300 uppercase">Regulatory</span><span className="text-[10px] font-black text-slate-200 uppercase">GST At Actuals</span></div>
-            <div className="flex justify-between py-5 px-6 bg-slate-800 text-white rounded-3xl shadow-2xl mt-6 scale-110 origin-right transition-transform hover:scale-[1.15]"><span className="text-[11px] font-black uppercase tracking-[0.3em] self-center text-brand-gold">Net Payable</span><span className="text-2xl font-black whitespace-nowrap">₹{Math.round(finalTotal).toLocaleString()}</span></div>
-          </div>
-        </div>
-        <div className="mt-16 break-inside-avoid">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-16">
-            <div><h4 className="text-[10px] font-black text-slate-300 uppercase tracking-[0.4em] mb-5 border-l-4 border-slate-800 pl-3">Terms</h4><div className="bg-slate-50 p-6 rounded-3xl border border-slate-100 no-print"><textarea rows={6} className="w-full text-[10px] bg-transparent border-none outline-none resize-none leading-loose font-bold text-slate-400" value={terms} onChange={e => setTerms(e.target.value)} /></div><div className="print-only text-[10px] leading-relaxed text-slate-400 font-bold whitespace-pre-wrap pl-2 italic">{terms}</div></div>
-            <div className="flex flex-col justify-end space-y-12 pb-6"><div className="flex justify-between items-end gap-10"><div className="text-center flex-1"><div className="border-t-2 border-slate-800 mb-3 w-full"></div><p className="text-[10px] font-black uppercase text-slate-300 tracking-[0.2em] text-center">Renowix Auth.</p></div><div className="text-center flex-1"><div className="border-t-2 border-slate-200 mb-3 w-full"></div><p className="text-[10px] font-black uppercase text-slate-200 tracking-[0.2em] text-center">Customer Sign.</p></div></div></div>
+
+          <div className="w-72 pt-5 border-t-2 border-slate-900">
+            <div className="flex justify-between py-1.5 px-3"><span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Sub-Total Area Cost</span><span className="font-black text-sm text-slate-500">₹{Math.round(subTotal).toLocaleString()}</span></div>
+            {discountAmount > 0 && (<div className="flex justify-between py-1.5 px-3"><span className="text-[10px] font-black text-brand-gold uppercase tracking-widest">Discretionary Discount</span><span className="font-black text-sm text-brand-gold">(-) ₹{Math.round(discountAmount).toLocaleString()}</span></div>)}
+            <div className="flex justify-between py-5 px-6 bg-slate-800 text-white rounded-2xl shadow-xl mt-4 scale-105 origin-right"><span className="text-[11px] font-black uppercase tracking-[0.3em] text-brand-gold self-center">Final Payable</span><span className="text-2xl font-black">₹{Math.round(finalTotal).toLocaleString()}</span></div>
           </div>
         </div>
-        <div className="mt-20 text-center opacity-20 no-print"><p className="text-[9px] font-black uppercase tracking-[1em]">Renowix Surveyor Pro Enterprise Suite</p></div>
+
+        <div className="mt-12 break-inside-avoid">
+          <h4 className="text-[9px] font-black text-slate-400 uppercase tracking-[0.4em] mb-4 border-l-4 border-slate-800 pl-3">Contractual Terms</h4>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
+            <div className="no-print bg-slate-50 p-4 rounded-xl border border-slate-100">
+              <textarea rows={5} className="w-full text-[10px] bg-transparent border-none outline-none resize-none leading-loose font-bold text-slate-500" value={terms} onChange={e => setTerms(e.target.value)} />
+            </div>
+            <div className="print-only text-[10px] leading-relaxed text-slate-500 font-bold whitespace-pre-wrap pl-2 italic leading-relaxed">{terms}</div>
+            
+            <div className="flex flex-col justify-end space-y-12 pb-6">
+              <div className="flex justify-between items-end gap-10">
+                <div className="text-center flex-1"><div className="border-t-2 border-slate-800 mb-2"></div><p className="text-[9px] font-black uppercase text-slate-300 tracking-[0.2em]">Authorized Signature</p></div>
+                <div className="text-center flex-1"><div className="border-t-2 border-slate-200 mb-2"></div><p className="text-[9px] font-black uppercase text-slate-300 tracking-[0.2em]">Client Seal & Sign</p></div>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -1058,30 +1162,73 @@ function MeasurementSheetView({ client, services, onBack }: { client: ClientDeta
         <button onClick={onBack} className="bg-white px-5 py-3 rounded-2xl border border-slate-200 text-xs font-black uppercase flex items-center gap-2 shadow-sm"><ArrowLeft size={16} /> Dashboard</button>
         <button onClick={() => window.print()} className="bg-slate-800 text-white px-6 py-3 rounded-2xl text-xs font-black uppercase flex items-center gap-2 shadow-xl hover:bg-slate-700"><Printer size={16} /> Print Sheet</button>
       </div>
-      <div className="w-full max-w-[210mm] bg-white min-h-[297mm] px-12 py-12 print:px-8 print:py-8 text-slate-900 shadow-[0_0_80px_-20px_rgba(0,0,0,0.15)] print:shadow-none flex flex-col">
-        <div className="flex justify-between items-start border-b-2 border-slate-900 pb-10 mb-10">
-          <div><img src={LOGO_URL} className="h-20 print:h-16 object-contain mb-4 scale-110" /><h1 className="text-2xl font-black uppercase text-slate-800">Renowix Renovations</h1><p className="text-[9px] text-slate-400 font-bold uppercase mt-2">Measurement Profile (Price-Free)</p></div>
-          <div className="text-right"><h2 className="text-5xl font-black text-slate-100 print:text-slate-200 uppercase tracking-tighter">M-Sheet</h2><div className="space-y-1.5 pr-2"><p className="text-[10px] font-black text-slate-400 uppercase">Audit ID</p><p className="font-black text-xs text-slate-800">MSR-{Math.floor(Date.now() / 1000).toString().slice(-6)}</p><p className="text-[10px] font-black text-slate-400 uppercase mt-3">Date</p><p className="font-bold text-xs text-slate-600">{date}</p></div></div>
+      <div className="w-full max-w-[210mm] bg-white min-h-[297mm] px-10 py-10 print:px-6 print:py-6 text-slate-900 shadow-2xl print:shadow-none flex flex-col">
+        <div className="flex justify-between items-center border-b-2 border-slate-900 pb-6 mb-8">
+          <div className="flex items-center gap-6"><img src={LOGO_URL} className="h-16 object-contain" /><div><h1 className="text-2xl font-black uppercase text-slate-800 leading-none">Renowix Renovations</h1><p className="text-[9px] text-slate-400 font-bold uppercase mt-1">Audit Measurement Profile</p></div></div>
+          <div className="text-right"><h2 className="text-4xl font-black text-slate-100 print:text-slate-200 uppercase tracking-tighter leading-none">M-Sheet</h2></div>
         </div>
-        <div className="grid grid-cols-2 gap-10 mb-10"><div className="p-5 bg-slate-50 border border-slate-100 rounded-3xl"><h4 className="text-[9px] font-black text-slate-400 uppercase mb-3 border-b pb-1">Client</h4><p className="text-lg font-black text-slate-800">{client.name}</p></div><div className="p-5 bg-slate-50 border border-slate-100 rounded-3xl"><h4 className="text-[9px] font-black text-slate-400 uppercase mb-3 border-b pb-1">Site</h4><p className="text-[10px] font-bold text-slate-400 whitespace-pre-wrap">{client.address || "Address pending"}</p></div></div>
+        
+        <div className="grid grid-cols-2 gap-8 mb-8">
+          <div className="p-4 bg-slate-50 border border-slate-100 rounded-2xl">
+            <h4 className="text-[9px] font-black text-slate-400 uppercase mb-2 border-b pb-1 tracking-widest">Client Name & Address</h4>
+            <p className="text-lg font-black text-slate-800">{client.name}</p>
+            <p className="text-[10px] font-medium text-slate-500 mt-1 whitespace-pre-wrap">{client.address || "Address pending verification"}</p>
+          </div>
+          <div className="p-4 bg-slate-50 border border-slate-100 rounded-2xl">
+            <h4 className="text-[9px] font-black text-slate-400 uppercase mb-2 border-b pb-1 tracking-widest">Metadata</h4>
+            <div className="flex flex-col gap-1">
+              <div className="flex justify-between"><span className="text-[8px] font-bold text-slate-400">AUDIT ID</span><span className="text-xs font-black text-slate-800 uppercase">#MSR-{Math.floor(Date.now() / 1000).toString().slice(-6)}</span></div>
+              <div className="flex justify-between"><span className="text-[8px] font-bold text-slate-400">SITE DATE</span><span className="text-xs font-black text-slate-800 uppercase">{date}</span></div>
+            </div>
+          </div>
+        </div>
+        
         <div className="flex-1">
-          <table className="w-full text-[11px] border-collapse">
-            <thead className="bg-slate-100"><tr className="border-y-2 border-slate-900"><th className="py-4 px-3 text-left font-black uppercase w-12">S#</th><th className="py-4 px-4 text-left font-black uppercase w-48">Location</th><th className="py-4 px-4 text-left font-black uppercase">Details</th><th className="py-4 px-4 text-right font-black uppercase w-28">Net Area</th><th className="py-4 px-4 text-left font-black uppercase w-20">Unit</th></tr></thead>
-            <tbody className="divide-y divide-slate-200 border-x border-b">
+          <table className="w-full text-[10px] border-collapse border border-slate-200">
+            <thead className="bg-slate-100">
+              <tr className="border-y-2 border-slate-900">
+                <th className="py-3 px-3 text-left font-black uppercase w-10">S#</th>
+                <th className="py-3 px-4 text-left font-black uppercase">Category / Room Section</th>
+                <th className="py-3 px-4 text-left font-black uppercase">Detailed Calculations</th>
+                <th className="py-3 px-4 text-right font-black uppercase w-24">Net Area</th>
+                <th className="py-3 px-4 text-left font-black uppercase w-16">Unit</th>
+              </tr>
+            </thead>
+            <tbody>
               {services.map((s, sIdx) => (
-                <React.Fragment key={sIdx}>
-                  <tr className="bg-slate-50"><td colSpan={5} className="py-3 px-4 font-black text-[10px] uppercase text-slate-900 flex items-center gap-3"><TableIcon size={14} className="text-slate-400" /> {s.name}</td></tr>
+                <React.Fragment key={s.instanceId}>
+                  <tr className="bg-slate-50"><td colSpan={5} className="py-2.5 px-3 font-black text-[10px] uppercase text-slate-900 bg-slate-100 border-y border-slate-200">CATEGORY: {s.name}</td></tr>
                   {s.items.map((item, iIdx) => (
-                    <tr key={item.id} className="align-top"><td className="py-5 px-3 text-slate-300 font-black text-center text-xs">{(iIdx + 1)}</td><td className="py-5 px-4 font-black text-slate-800 uppercase text-[12px]">{item.name}</td><td className="py-5 px-4 text-slate-500 font-medium">{item.cabinetSections?.map(cab => (
-                      <div key={cab.id} className="flex justify-between border-b last:border-0 pb-1.5"><span className="text-slate-400 text-[9px] uppercase">{cab.name}</span><span>({cab.l}×{cab.b})×{cab.q} = {(cab.l*cab.b*cab.q).toFixed(2)}</span></div>
-                    ))} {s.categoryId === 'painting' && (<div>{item.walls?.map(w => w.width).join('+')}×H:{item.height}ft {item.ceilings?.length ? ` + C:${item.ceilings.reduce((a,b)=>a+(b.l*b.b),0).toFixed(2)}` : ''}</div>)} </td><td className="py-5 px-4 text-right font-black text-slate-900 text-[13px]">{item.netArea.toFixed(2)}</td><td className="py-5 px-4 text-left font-black text-slate-200 uppercase text-[9px]">{s.unit}</td></tr>
+                    <tr key={item.id} className="align-top border-b border-slate-100 break-inside-avoid">
+                      <td className="py-5 px-3 text-slate-300 font-black">{(iIdx + 1)}</td>
+                      <td className="py-5 px-4 font-black text-slate-800 uppercase text-[11px]">{item.name}</td>
+                      <td className="py-5 px-4 text-slate-500 font-medium">
+                        <div className="flex flex-wrap gap-1">
+                          {item.cabinetSections?.map((cab, ci) => (
+                            <span key={cab.id} className="text-[10px]">{cab.name} ({cab.l}x{cab.b})x{cab.q}{ci < item.cabinetSections!.length - 1 ? ', ' : ''}</span>
+                          ))}
+                        </div>
+                        {s.categoryId === 'painting' && (
+                          <div className="mt-2 text-[8px] text-slate-400 italic">
+                            {item.walls?.length ? `Walls: ${item.walls.map(w => w.width).join('+')} × ${item.height}H` : ''}
+                            {item.deductions?.length ? ` | Deductions: -${item.deductions.reduce((acc, d) => acc + (d.area * d.qty), 0)}` : ''}
+                          </div>
+                        )}
+                      </td>
+                      <td className="py-5 px-4 text-right font-black text-slate-900 text-[12px]">{item.netArea.toFixed(2)}</td>
+                      <td className="py-5 px-4 text-left font-black text-slate-200 uppercase text-[8px]">{s.unit}</td>
+                    </tr>
                   ))}
                 </React.Fragment>
               ))}
             </tbody>
           </table>
         </div>
-        <div className="mt-16 flex justify-between items-end border-t border-slate-100 pt-10"><div className="text-left w-56"><div className="h-12 border-b-2 border-slate-900"></div><p className="text-[10px] font-black uppercase text-slate-300 text-center">Surveyor Auth.</p></div><div className="text-right w-56"><div className="h-12 border-b-2 border-slate-100"></div><p className="text-[10px] font-black uppercase text-slate-300 text-center">Supervisor / Client</p></div></div>
+        
+        <div className="mt-12 flex justify-between items-end border-t border-slate-100 pt-8 break-inside-avoid">
+          <div className="text-left w-56"><div className="h-10 border-b-2 border-slate-900"></div><p className="text-[9px] font-black uppercase text-slate-300 text-center mt-2 tracking-widest">Surveyor Authentication</p></div>
+          <div className="text-right w-56"><div className="h-10 border-b-2 border-slate-100"></div><p className="text-[9px] font-black uppercase text-slate-300 text-center mt-2 tracking-widest">Client Acknowledgement</p></div>
+        </div>
       </div>
     </div>
   );

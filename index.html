@@ -50,9 +50,19 @@
         .no-print { display: none !important; }
         .print-only { display: block !important; }
         body { background: white; -webkit-print-color-adjust: exact; margin: 0; padding: 0; }
-        @page { size: A4; margin: 1cm; }
+        @page { size: A4; margin: 0.5cm; }
+        
+        tr, .break-inside-avoid {
+          break-inside: avoid;
+        }
       }
+      
       .print-only { display: none; }
+
+      /* Standardize input field sizing for symmetry */
+      input, select, textarea {
+        font-size: 16px !important;
+      }
 
       /* Disable swipe to refresh and overscroll bounce */
       body, html {
@@ -69,7 +79,18 @@
       }
       
       .view-transition {
-        transition: all 0.2s ease-in-out;
+        transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.2s linear;
+      }
+
+      .masked-estimate {
+        filter: blur(8px);
+        user-select: none;
+        pointer-events: none;
+      }
+
+      /* Sticky footer optimization */
+      .safe-bottom {
+        padding-bottom: env(safe-area-inset-bottom);
       }
     </style>
 
