@@ -55,7 +55,7 @@ import {
 import { SERVICE_DATA, DEFAULT_TERMS } from './constants';
 
 declare global {
-  interface Window {
+  interface window {
     google: any;
   }
 }
@@ -148,7 +148,9 @@ export default function App() {
 
   useEffect(() => {
     const initGsi = () => {
+      // @ts-ignore
       if (typeof window.google === 'undefined') return;
+      // @ts-ignore
       tokenClientRef.current = window.google.accounts.oauth2.initTokenClient({
         client_id: CLIENT_ID,
         scope: 'https://www.googleapis.com/auth/calendar.events',
@@ -1053,22 +1055,26 @@ function QuoteView({ client, services, terms: initialTerms, onBack }: { client: 
         <button onClick={onBack} className="bg-white px-5 py-3 rounded-2xl border border-slate-200 text-xs font-black uppercase flex items-center gap-2 shadow-sm"><ArrowLeft size={16} /> Dashboard</button>
         <button onClick={() => window.print()} className="bg-slate-800 text-white px-6 py-3 rounded-2xl text-xs font-black uppercase flex items-center gap-2 shadow-xl hover:bg-slate-700"><Printer size={16} /> Print Quote</button>
       </div>
-      <div className="w-full max-w-[210mm] bg-white min-h-[297mm] px-10 py-10 print:px-6 print:py-6 text-slate-900 shadow-2xl print:shadow-none flex flex-col overflow-hidden">
+      
+      {/* Main Quotation Page */}
+      <div className="w-full max-w-[210mm] bg-white min-h-[297mm] px-10 py-10 print:px-6 print:py-6 text-slate-900 shadow-2xl print:shadow-none flex flex-col">
         
-        <div className="flex justify-between items-center border-b-2 border-slate-900 pb-6 mb-8">
+        {/* Header Section */}
+        <div className="flex justify-between items-center border-b-2 border-slate-900 pb-6 mb-8 flex-shrink-0">
           <div className="flex items-center gap-6">
-            <img src={LOGO_URL} className="h-20 object-contain" />
+            <img src={LOGO_URL} className="h-24 object-contain" />
             <div>
-              <h1 className="text-3xl font-black uppercase text-slate-800 leading-none mb-1">Renowix Renovations</h1>
-              <p className="text-[11px] text-slate-400 font-bold uppercase tracking-[0.3em]">Complete Home Interior Solutions</p>
+              <h1 className="text-4xl font-black uppercase text-slate-800 leading-none mb-1 tracking-tight">Renowix Renovations</h1>
+              <p className="text-xs text-slate-400 font-bold uppercase tracking-[0.4em]">Complete Home Interior Solutions</p>
             </div>
           </div>
           <div className="text-right">
-            <h2 className="text-5xl font-black text-slate-100 print:text-slate-200 uppercase tracking-tighter leading-none">Quote</h2>
+            <h2 className="text-6xl font-black text-slate-100 print:text-slate-200 uppercase tracking-tighter leading-none">Quote</h2>
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-8 mb-8">
+        {/* Info Blocks */}
+        <div className="grid grid-cols-2 gap-8 mb-8 flex-shrink-0">
           <div className="p-5 bg-slate-50 border border-slate-100 rounded-2xl">
             <h4 className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em] mb-3 border-b pb-1">Client Profile</h4>
             <p className="text-xl font-black text-slate-800 leading-tight mb-1">{client.name}</p>
@@ -1083,71 +1089,84 @@ function QuoteView({ client, services, terms: initialTerms, onBack }: { client: 
           </div>
         </div>
 
-        <div className="flex-1">
-          <table className="w-full text-xs border-collapse overflow-hidden rounded-t-xl border border-slate-200">
-            <thead>
-              <tr className="bg-slate-800 text-white">
-                <th className="py-4 px-3 text-left font-black uppercase tracking-widest w-12 border-r border-white/5">#</th>
-                <th className="py-4 px-4 text-left font-black uppercase tracking-widest border-r border-white/5">Service Detail & Site Rooms</th>
-                <th className="py-4 px-3 text-right font-black uppercase tracking-widest w-20 border-r border-white/5">Qty</th>
-                <th className="py-4 px-3 text-right font-black uppercase tracking-widest w-24 border-r border-white/5">Rate</th>
-                <th className="py-4 px-4 text-right font-black uppercase tracking-widest w-32">Amount (₹)</th>
-              </tr>
-            </thead>
-            <tbody>
-              {services.map((s, idx) => (
-                <tr key={idx} className="border-b border-slate-100 break-inside-avoid">
-                  <td className="py-6 px-3 align-top font-black text-slate-300">{(idx + 1)}</td>
-                  <td className="py-6 px-4 align-top">
-                    <p className="font-black text-slate-800 mb-1 uppercase tracking-tight text-sm"><strong>{s.name}</strong></p>
-                    <p className="text-[9px] text-slate-400 leading-relaxed font-bold italic mb-4 max-w-sm">{s.desc}</p>
-                    
-                    {/* Integrated Room List Row */}
-                    <div className="flex flex-wrap gap-x-1 items-center bg-slate-50 p-2.5 rounded-xl border border-slate-200/50">
-                      <span className="text-[8px] font-black uppercase text-slate-400 mr-1.5 underline decoration-brand-gold/30">Rooms Included:</span>
-                      <p className="text-[10px] font-black text-slate-700 leading-none">
-                        {s.items.map(item => item.name).join(', ')}
-                      </p>
-                    </div>
-                  </td>
-                  <td className="py-6 px-3 align-top text-right font-black text-slate-800">{s.items.reduce((a, b) => a + b.netArea, 0).toFixed(2)}</td>
-                  <td className="py-6 px-3 align-top text-right font-bold text-slate-400">₹{s.items[0]?.rate.toLocaleString()}</td>
-                  <td className="py-6 px-4 align-top text-right font-black text-slate-800">₹{Math.round(s.items.reduce((a, b) => a + b.cost, 0)).toLocaleString()}</td>
+        {/* Content Area - Natural Stacking */}
+        <div className="flex flex-col min-h-0">
+          
+          {/* Table Area with safe padding */}
+          <div className="pb-10 border-b border-slate-100">
+            <table className="w-full text-xs border-collapse overflow-hidden rounded-t-xl border border-slate-200">
+              <thead>
+                <tr className="bg-slate-800 text-white">
+                  <th className="py-4 px-3 text-left font-black uppercase tracking-widest w-12 border-r border-white/5">#</th>
+                  <th className="py-4 px-4 text-left font-black uppercase tracking-widest border-r border-white/5">Service Detail & Site Rooms</th>
+                  <th className="py-4 px-3 text-right font-black uppercase tracking-widest w-20 border-r border-white/5">Qty</th>
+                  <th className="py-4 px-3 text-right font-black uppercase tracking-widest w-24 border-r border-white/5">Rate</th>
+                  <th className="py-4 px-4 text-right font-black uppercase tracking-widest w-32">Amount (₹)</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-
-        <div className="mt-10 flex flex-col items-end gap-5 break-inside-avoid">
-          {/* Discount Logic Block */}
-          <div className="w-full max-w-xs no-print bg-slate-50 p-4 rounded-2xl border border-slate-100">
-             <div className="flex items-center justify-between mb-3"><span className="text-[9px] font-black uppercase text-slate-400 tracking-widest">Update Discount</span><div className="flex gap-1">{['none', 'percent', 'fixed'].map(opt => (<button key={opt} onClick={() => setDiscountType(opt as any)} className={`px-3 py-1.5 rounded-lg text-[8px] font-black uppercase transition-all ${discountType === opt ? 'bg-slate-800 text-white' : 'bg-white border border-slate-200 text-slate-400'}`}>{opt}</button>))}</div></div>
-             {discountType !== 'none' && (<div className="flex items-center gap-2"><div className="relative flex-1"><input type="number" value={discountValue || ''} onChange={e => setDiscountValue(parseFloat(e.target.value) || 0)} className="w-full p-2.5 pl-8 rounded-lg border border-slate-200 bg-white text-xs font-black outline-none" placeholder={discountType === 'percent' ? "%" : "₹"} /><div className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-300">{discountType === 'percent' ? <Percent size={14}/> : <CircleDollarSign size={14}/>}</div></div><div className="text-[11px] font-black text-brand-gold bg-white px-3 py-2.5 rounded-lg border border-slate-100">- ₹{Math.round(discountAmount).toLocaleString()}</div></div>)}
+              </thead>
+              <tbody>
+                {services.map((s, idx) => (
+                  <tr key={idx} className="border-b border-slate-100 break-inside-avoid">
+                    <td className="py-6 px-3 align-top font-black text-slate-300">{(idx + 1)}</td>
+                    <td className="py-6 px-4 align-top">
+                      <p className="font-black text-slate-800 mb-1 uppercase tracking-tight text-sm"><strong>{s.name}</strong></p>
+                      <p className="text-[9px] text-slate-400 leading-relaxed font-bold italic mb-4 max-w-sm">{s.desc}</p>
+                      <div className="flex flex-wrap gap-x-1 items-center bg-slate-50 p-2.5 rounded-xl border border-slate-200/50">
+                        <span className="text-[8px] font-black uppercase text-slate-400 mr-1.5 underline decoration-brand-gold/30">Rooms Included:</span>
+                        <p className="text-[10px] font-black text-slate-700 leading-none">
+                          {s.items.map(item => item.name).join(', ')}
+                        </p>
+                      </div>
+                    </td>
+                    <td className="py-6 px-3 align-top text-right font-black text-slate-800">{s.items.reduce((a, b) => a + b.netArea, 0).toFixed(2)}</td>
+                    <td className="py-6 px-3 align-top text-right font-bold text-slate-400">₹{s.items[0]?.rate.toLocaleString()}</td>
+                    <td className="py-6 px-4 align-top text-right font-black text-slate-800">₹{Math.round(s.items.reduce((a, b) => a + b.cost, 0)).toLocaleString()}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
 
-          <div className="w-72 pt-5 border-t-2 border-slate-900">
-            <div className="flex justify-between py-1.5 px-3"><span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Sub-Total Area Cost</span><span className="font-black text-sm text-slate-500">₹{Math.round(subTotal).toLocaleString()}</span></div>
-            {discountAmount > 0 && (<div className="flex justify-between py-1.5 px-3"><span className="text-[10px] font-black text-brand-gold uppercase tracking-widest">Discretionary Discount</span><span className="font-black text-sm text-brand-gold">(-) ₹{Math.round(discountAmount).toLocaleString()}</span></div>)}
-            <div className="flex justify-between py-5 px-6 bg-slate-800 text-white rounded-2xl shadow-xl mt-4 scale-105 origin-right"><span className="text-[11px] font-black uppercase tracking-[0.3em] text-brand-gold self-center">Final Payable</span><span className="text-2xl font-black">₹{Math.round(finalTotal).toLocaleString()}</span></div>
-          </div>
-        </div>
-
-        <div className="mt-12 break-inside-avoid">
-          <h4 className="text-[9px] font-black text-slate-400 uppercase tracking-[0.4em] mb-4 border-l-4 border-slate-800 pl-3">Contractual Terms</h4>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
-            <div className="no-print bg-slate-50 p-4 rounded-xl border border-slate-100">
+          {/* Terms Section - Pushes total to bottom */}
+          <div className="mt-10 mb-10 min-h-0 flex-1">
+            <h4 className="text-[9px] font-black text-slate-400 uppercase tracking-[0.4em] mb-4 border-l-4 border-slate-800 pl-3">Contractual Terms</h4>
+            <div className="no-print bg-slate-50 p-4 rounded-xl border border-slate-100 mb-4">
               <textarea rows={5} className="w-full text-[10px] bg-transparent border-none outline-none resize-none leading-loose font-bold text-slate-500" value={terms} onChange={e => setTerms(e.target.value)} />
             </div>
             <div className="print-only text-[10px] leading-relaxed text-slate-500 font-bold whitespace-pre-wrap pl-2 italic leading-relaxed">{terms}</div>
-            
-            <div className="flex flex-col justify-end space-y-12 pb-6">
-              <div className="flex justify-between items-end gap-10">
-                <div className="text-center flex-1"><div className="border-t-2 border-slate-800 mb-2"></div><p className="text-[9px] font-black uppercase text-slate-300 tracking-[0.2em]">Authorized Signature</p></div>
-                <div className="text-center flex-1"><div className="border-t-2 border-slate-200 mb-2"></div><p className="text-[9px] font-black uppercase text-slate-300 tracking-[0.2em]">Client Seal & Sign</p></div>
+          </div>
+
+          {/* Bottom Totals & Signature Block */}
+          <div className="mt-auto border-t-2 border-slate-900 pt-8 flex flex-col gap-8 break-inside-avoid">
+            <div className="flex justify-between items-end">
+              
+              {/* Authorized Signatures */}
+              <div className="flex gap-10 flex-1">
+                <div className="text-center w-48"><div className="border-t-2 border-slate-800 mb-2"></div><p className="text-[9px] font-black uppercase text-slate-300 tracking-[0.2em]">Authorized Signature</p></div>
+                <div className="text-center w-48"><div className="border-t-2 border-slate-200 mb-2"></div><p className="text-[9px] font-black uppercase text-slate-300 tracking-[0.2em]">Client Seal & Sign</p></div>
+              </div>
+
+              {/* Final Totals Block */}
+              <div className="w-80 flex flex-col items-end gap-4">
+                <div className="w-full no-print bg-slate-50 p-3 rounded-2xl border border-slate-100 mb-2">
+                  <div className="flex items-center justify-between mb-2"><span className="text-[8px] font-black uppercase text-slate-400">Discount Logic</span><div className="flex gap-1">{['none', 'percent', 'fixed'].map(opt => (<button key={opt} onClick={() => setDiscountType(opt as any)} className={`px-2 py-1 rounded-lg text-[7px] font-black uppercase transition-all ${discountType === opt ? 'bg-slate-800 text-white' : 'bg-white border border-slate-200 text-slate-400'}`}>{opt}</button>))}</div></div>
+                  {discountType !== 'none' && (<div className="flex items-center gap-2"><div className="relative flex-1"><input type="number" value={discountValue || ''} onChange={e => setDiscountValue(parseFloat(e.target.value) || 0)} className="w-full p-2 pl-7 rounded-lg border border-slate-200 bg-white text-[10px] font-black outline-none" placeholder={discountType === 'percent' ? "%" : "₹"} /><div className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-300">{discountType === 'percent' ? <Percent size={12}/> : <CircleDollarSign size={12}/>}</div></div></div>)}
+                </div>
+
+                <div className="w-full space-y-2">
+                  <div className="flex justify-between px-3"><span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Sub-Total</span><span className="font-black text-sm text-slate-500">₹{Math.round(subTotal).toLocaleString()}</span></div>
+                  {discountAmount > 0 && (<div className="flex justify-between px-3"><span className="text-[10px] font-black text-brand-gold uppercase tracking-widest">Discount</span><span className="font-black text-sm text-brand-gold">(-) ₹{Math.round(discountAmount).toLocaleString()}</span></div>)}
+                  
+                  {/* Final Payable Card - Bold and bottom aligned */}
+                  <div className="bg-slate-900 text-white p-6 rounded-3xl shadow-2xl flex justify-between items-center transform scale-105 origin-right">
+                    <span className="text-[11px] font-black uppercase tracking-[0.3em] text-brand-gold">Final Payable</span>
+                    <span className="text-3xl font-black">₹{Math.round(finalTotal).toLocaleString()}</span>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
+
         </div>
       </div>
     </div>
