@@ -1132,73 +1132,71 @@ function QuoteView({ client, services, terms: initialTerms, onBack }: { client: 
           </table>
 
           {/* Table Summary Footer */}
-          <div className="flex justify-end p-6 border-x border-b border-slate-200 bg-slate-50/40 mb-10">
+          <div className="flex justify-end p-6 border-x border-b border-slate-200 bg-slate-50/40 mb-6">
             <div className="text-right">
-              <span className="text-[11px] font-black uppercase text-slate-500 tracking-[0.2em] mr-6">Gross Sub-Total area cost</span>
+              <span className="text-[12px] font-black uppercase text-slate-500 tracking-[0.2em] mr-6">Sub-Total Cost</span>
               <span className="text-xl font-black text-slate-800 tracking-tight">₹{Math.round(subTotal).toLocaleString()}</span>
             </div>
           </div>
         </div>
 
-        {/* 4. Financial Summary & Totals - High Impact Block */}
-        <div className="mt-10 mb-16 flex justify-end flex-shrink-0 break-inside-avoid">
-          <div className="w-full max-w-sm flex flex-col gap-8">
-            {/* Discount Adjustment Area */}
-            <div className="no-print bg-slate-50 p-4 rounded border border-slate-100">
+        {/* 4. Financial Summary & Totals - Restored Classic Card Style */}
+        <div className="flex flex-col items-end flex-shrink-0 break-inside-avoid">
+          <div className="w-full max-w-sm flex flex-col gap-4">
+            {/* Discount Adjustment Area (No Print) */}
+            <div className="no-print bg-slate-50 p-4 rounded border border-slate-100 mb-2">
               <div className="flex items-center justify-between mb-3"><span className="text-[9px] font-black uppercase text-slate-400 tracking-widest">Apply Discount</span><div className="flex gap-1">{['none', 'percent', 'fixed'].map(t => (<button key={t} onClick={() => setDiscountType(t as any)} className={`px-2 py-1 rounded text-[7px] font-black uppercase transition-all ${discountType === t ? 'bg-slate-900 text-white' : 'bg-white border border-slate-200 text-slate-300'}`}>{t}</button>))}</div></div>
               {discountType !== 'none' && (<input type="number" className="w-full p-2 border rounded text-xs font-bold outline-none" placeholder={discountType === 'percent' ? "% Percent" : "Fixed Amount (₹)"} value={discountValue || ''} onChange={e => setDiscountValue(parseFloat(e.target.value) || 0)} />)}
             </div>
 
-            {/* GRAND TOTAL - BLACK BOX */}
-            <div className="bg-slate-900 text-white p-8 rounded-sm shadow-2xl relative overflow-hidden group">
-              {/* Luxury Accent Line */}
-              <div className="absolute top-0 left-0 w-1 h-full bg-brand-gold"></div>
-              
-              <div className="relative z-10 flex flex-col gap-6">
-                <div className="flex justify-between items-start">
-                   <div className="flex flex-col">
-                      <span className="text-[14px] font-bold uppercase tracking-[0.4em] text-brand-gold mb-1">Final Total Payable</span>
-                      <span className="text-[10px] opacity-40 uppercase font-medium">All-Inclusive Services</span>
-                   </div>
-                   {discountAmount > 0 && (<span className="text-[10px] font-black text-brand-gold italic">Applied Privilege Discount: -₹{Math.round(discountAmount).toLocaleString()}</span>)}
-                </div>
-                <div className="flex justify-between items-baseline border-t border-white/10 pt-6">
-                   <span className="text-sm font-black text-slate-500 uppercase tracking-widest">Grand Total</span>
-                   <span className="text-5xl font-black tracking-tighter">₹{Math.round(finalTotal).toLocaleString()}</span>
-                </div>
+            {/* FINAL PAYABLE CARD - AS PER IMAGE */}
+            <div className="bg-[#1E293B] text-white p-6 rounded-[1.5rem] shadow-xl flex items-center justify-between w-full relative overflow-hidden group">
+              <div className="flex flex-col">
+                <span className="text-[#EAB308] font-black text-lg tracking-[0.1em] leading-tight uppercase">Final</span>
+                <span className="text-[#EAB308] font-black text-lg tracking-[0.1em] leading-tight uppercase">Payable</span>
+              </div>
+              <div className="text-4xl font-black tracking-tight flex items-baseline gap-1">
+                <span className="text-2xl opacity-80">₹</span>
+                {Math.round(finalTotal).toLocaleString()}
               </div>
             </div>
+            
+            {discountAmount > 0 && (
+              <p className="text-[10px] font-black text-brand-gold italic text-right px-2">
+                Applied Privilege Discount: -₹{Math.round(discountAmount).toLocaleString()}
+              </p>
+            )}
           </div>
         </div>
 
         {/* 5. Validation Block (Terms & Signatures) */}
-        <div className="mt-auto flex flex-col gap-12 border-t-2 border-slate-100 pt-10 break-inside-avoid">
-          <div className="flex flex-col gap-4">
-             <h4 className="text-[12px] font-black text-slate-900 uppercase tracking-[0.4em] mb-4">Contractual Terms & Conditions</h4>
-             <div className="no-print mb-4">
-               <textarea rows={5} className="w-full text-xs p-5 bg-slate-50 border-none rounded font-medium leading-[2] outline-none text-slate-600 italic" value={terms} onChange={e => setTerms(e.target.value)} />
+        <div className="mt-8 flex flex-col gap-8 border-t-2 border-slate-100 pt-6 break-inside-avoid">
+          <div className="flex flex-col gap-2">
+             <h4 className="text-[13px] font-black text-slate-900 uppercase tracking-normal mb-2">Contractual Terms & Conditions</h4>
+             <div className="no-print">
+               <textarea rows={5} className="w-full text-sm p-4 bg-slate-50 border-none rounded font-medium leading-relaxed outline-none text-slate-600" value={terms} onChange={e => setTerms(e.target.value)} />
              </div>
-             <div className="print-only text-xs leading-[2] text-slate-500 font-bold whitespace-pre-wrap px-4 italic border-l-4 border-slate-100">
+             <div className="print-only text-sm leading-[1.8] text-slate-700 font-semibold tracking-tight whitespace-pre-wrap px-4 italic border-l-4 border-slate-200">
                {terms}
              </div>
           </div>
 
-          <div className="flex justify-between items-end pb-6 mt-6">
+          <div className="flex justify-between items-end pb-4 mt-4">
             <div className="w-72 text-center">
-              <div className="h-20 border-b-2 border-slate-900 mb-4 opacity-10"></div>
+              <div className="h-20 border-b-2 border-slate-900 mb-3 opacity-10"></div>
               <p className="text-[11px] font-black uppercase text-slate-900 tracking-widest">Authorized Executive</p>
-              <p className="text-[9px] text-slate-400 font-bold uppercase mt-1">Renowix Project Lead</p>
+              <p className="text-[9px] text-slate-400 font-bold uppercase mt-1 tracking-normal">Renowix Project Lead</p>
             </div>
             <div className="w-72 text-center">
-              <div className="h-20 border-b-2 border-slate-900 mb-4 opacity-10"></div>
+              <div className="h-20 border-b-2 border-slate-200 mb-3 opacity-10"></div>
               <p className="text-[11px] font-black uppercase text-slate-900 tracking-widest">Client Authentication</p>
-              <p className="text-[9px] text-slate-400 font-bold uppercase mt-1">Acceptance Sign</p>
+              <p className="text-[9px] text-slate-400 font-bold uppercase mt-1 tracking-normal">Acceptance Sign</p>
             </div>
           </div>
 
-          <div className="pt-8 border-t border-slate-50 flex justify-between items-center opacity-30">
-            <p className="text-[8px] font-black text-slate-400 uppercase tracking-[0.5em]">This is a system generated quotation</p>
-            <p className="text-[8px] font-black text-slate-400 uppercase tracking-[0.5em]">Surveyor Pro Suite</p>
+          <div className="pt-6 border-t border-slate-50 flex justify-between items-center opacity-30">
+            <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">This is a system generated quotation</p>
+            <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Surveyor Pro Suite</p>
           </div>
         </div>
 
