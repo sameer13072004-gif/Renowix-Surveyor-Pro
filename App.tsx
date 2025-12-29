@@ -40,7 +40,8 @@ import {
   Settings,
   ChevronDown,
   ChevronUp,
-  Clock
+  Clock,
+  ArrowUpRight
 } from 'lucide-react';
 import { 
   ActiveService, 
@@ -85,11 +86,19 @@ export default function App() {
   const [exitModal, setExitModal] = useState<{ show: boolean; target: PageView | null }>({ show: false, target: null });
   const [exitAppModal, setExitAppModal] = useState(false);
   const [saveModal, setSaveModal] = useState<{ show: boolean }>({ show: false });
-  const [reminderModal, setReminderModal] = useState<{ show: boolean; project: Project | null; dueDate: string; isSaving: boolean }>({
+  const [editClientModal, setEditClientModal] = useState<{ show: boolean; project: Project | null }>({ show: false, project: null });
+  const [reminderModal, setReminderModal] = useState<{ 
+    show: boolean; 
+    project: Project | null; 
+    dueDate: string; 
+    isSaving: boolean;
+    step: 'options' | 'custom'
+  }>({
     show: false,
     project: null,
     dueDate: new Date(Date.now() + 86400000).toISOString().slice(0, 16),
-    isSaving: false
+    isSaving: false,
+    step: 'options'
   });
 
   const toggleExpand = (id: string) => {
@@ -108,7 +117,7 @@ export default function App() {
   }, [isDirty]);
 
   const handleBackNavigation = (target: PageView) => {
-    if (isDirty && (view === 'dashboard' || view === 'client-details' || view === 'measure')) {
+    if (isDirty && (view === 'dashboard' || view === 'measure')) {
       setExitModal({ show: true, target });
     } else {
       setView(target);
@@ -123,14 +132,14 @@ export default function App() {
         return;
       }
 
-      if (isDirty && (view === 'dashboard' || view === 'client-details' || view === 'measure')) {
+      if (isDirty && (view === 'dashboard' || view === 'measure')) {
         window.history.pushState(null, '', ''); 
         setExitModal({ show: true, target: 'welcome' });
       } else {
         const prevViews: Record<string, PageView> = {
           'history': 'welcome',
           'client-details': 'welcome',
-          'dashboard': 'client-details',
+          'dashboard': 'welcome',
           'service-select': 'dashboard',
           'measure': 'dashboard',
           'quote': 'dashboard',
@@ -197,13 +206,13 @@ export default function App() {
     localStorage.removeItem('google_access_token');
   };
 
-  const createCalendarEvent = async () => {
+  const createCalendarEvent = async (customDate?: string) => {
     if (!googleToken || !reminderModal.project) return;
     setReminderModal(prev => ({ ...prev, isSaving: true }));
     
     try {
       const { project, dueDate } = reminderModal;
-      const startTime = new Date(dueDate);
+      const startTime = new Date(customDate || dueDate);
       const endTime = new Date(startTime.getTime() + 30 * 60000);
       
       const summary = `Follow up: ${project.client.name} - Renowix`;
@@ -236,7 +245,7 @@ export default function App() {
       }
 
       alert("Follow-up reminder set successfully in Google Calendar!");
-      setReminderModal({ show: false, project: null, dueDate: '', isSaving: false });
+      setReminderModal({ show: false, project: null, dueDate: '', isSaving: false, step: 'options' });
     } catch (error: any) {
       alert(error.message || "An error occurred");
       setReminderModal(prev => ({ ...prev, isSaving: false }));
@@ -358,6 +367,36 @@ export default function App() {
     return JSON.stringify({ client, services, terms }) === JSON.stringify({ client: existing.client, services: existing.services, terms: existing.terms });
   };
 
+  const handleUpdateClientDetails = () => {
+    if (!editClientModal.project) return;
+    const newHistory = projects.map(p => {
+      if (p.id === editClientModal.project!.id) {
+        return { ...p, client: { ...editClientModal.project!.client } };
+      }
+      return p;
+    });
+    saveToHistory(newHistory);
+    setEditClientModal({ show: false, project: null });
+  };
+
+  const loadProject = (p: Project) => {
+    setClient(p.client);
+    setServices(p.services);
+    setTerms(p.terms || DEFAULT_TERMS);
+    setCurrentProjectId(p.id);
+    setIsDirty(false);
+    setView('dashboard');
+  };
+
+  const handleExitApp = () => {
+    try {
+      window.close();
+    } catch (e) {
+      alert("Exiting... If this window doesn't close, please manually close your browser tab or use your device's home button.");
+      setExitAppModal(false);
+    }
+  };
+
   if (view === 'quote') return <QuoteView client={client} services={services} terms={terms} onBack={() => setView('dashboard')} />;
   if (view === 'measurement-sheet') return <MeasurementSheetView client={client} services={services} onBack={() => setView('dashboard')} />;
 
@@ -366,7 +405,7 @@ export default function App() {
       <div className="w-full max-w-xl bg-white sm:rounded-3xl shadow-2xl flex flex-col min-h-screen sm:min-h-[85vh] relative overflow-hidden border border-gray-100">
         
         {view !== 'setup' && (
-          <div className="px-4 py-3 bg-white border-b border-gray-100 sticky top-0 z-50 flex items-center justify-between shadow-sm">
+          <div className="px-4 py-3 bg-white border-b border-gray-100 sticky top-0 z-[150] flex items-center justify-between shadow-sm">
             <div className="flex items-center gap-3">
               <img src={LOGO_URL} alt="Renowix" className="h-10 w-auto object-contain" />
               <div className="flex items-center gap-1.5 leading-none">
@@ -464,47 +503,59 @@ export default function App() {
                     <p className="font-bold">No saved projects found.</p>
                   </div>
                 )}
-                {projects.map((p, idx) => (
-                  <div key={p.id} className="bg-white border border-slate-100 rounded-3xl p-5 shadow-soft hover:shadow-md transition-all">
-                    <div className="flex justify-between items-start mb-4">
-                      <div className="flex items-center gap-4">
-                         <div className="bg-blue-50 text-blue-600 p-3 rounded-2xl"><User size={20} /></div>
-                         <div className="max-w-[180px]">
-                            <h3 className="font-black text-slate-800 truncate">{p.client.name}</h3>
-                            <div className="flex items-center gap-1 text-[10px] text-slate-400 font-bold uppercase mt-0.5">
-                               <MapPin size={10} className="text-brand-gold" />
-                               <span className="truncate">{p.client.address || 'No Address'}</span>
-                            </div>
-                         </div>
+                {projects.map((p, idx) => {
+                  const [datePart, timePart] = p.date.split(', ');
+                  return (
+                    <div 
+                      key={p.id} 
+                      onClick={() => loadProject(p)}
+                      className="bg-white rounded-xl p-4 shadow-soft border border-slate-50 hover:bg-slate-50 active:bg-slate-100 transition-all relative cursor-pointer group"
+                    >
+                      <button 
+                        onClick={(e) => { e.stopPropagation(); confirm("Permanently delete this project?") && saveToHistory(projects.filter(prj => prj.id !== p.id)); }}
+                        className="absolute top-3 right-3 p-2 text-slate-300 hover:text-red-500 z-10 transition-colors"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                      
+                      <div className="flex items-center gap-3 mb-3">
+                        <div className="bg-blue-50 text-blue-600 p-2.5 rounded-lg"><User size={20} /></div>
+                        <div className="overflow-hidden">
+                          <h3 className="font-bold text-base text-slate-800 truncate">{p.client.name}</h3>
+                          <p className="text-[10px] text-slate-400 font-medium truncate flex items-center gap-1"><MapPin size={10} /> {p.client.address || 'No Address'}</p>
+                        </div>
                       </div>
-                      <div className="flex gap-2">
-                        <button 
-                          onClick={() => {
-                            if (!googleToken) {
-                              alert("Please sign in at the top right first.");
-                              return;
-                            }
-                            setReminderModal(prev => ({ ...prev, show: true, project: p }));
-                          }}
-                          className="p-2.5 text-slate-500 hover:text-brand-gold bg-slate-50 rounded-xl transition-all"
-                          title="Set Reminder"
-                        >
-                          <Bell size={18} />
-                        </button>
-                        <button onClick={() => confirm("Permanently delete this project?") && saveToHistory(projects.filter(prj => prj.id !== p.id))} className="p-2.5 text-red-500 hover:text-red-700 bg-red-50 rounded-xl transition-colors">
-                          <Trash2 size={18} />
-                        </button>
+
+                      <div className="flex justify-between items-end">
+                        <div className="space-x-2 flex items-baseline">
+                          <span className="text-sm font-medium text-slate-600">{datePart}</span>
+                          <span className="text-[11px] text-slate-400">{timePart}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                           <button 
+                            onClick={(e) => { e.stopPropagation(); setEditClientModal({ show: true, project: p }); }}
+                            className="p-2 text-slate-400 hover:text-blue-600 bg-slate-50 rounded-lg"
+                          >
+                            <Edit2 size={16} />
+                          </button>
+                          <button 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (!googleToken) return alert("Please sign in at the top right first.");
+                              setReminderModal(prev => ({ ...prev, show: true, project: p, step: 'options' }));
+                            }}
+                            className="p-2 text-slate-400 hover:text-brand-gold bg-slate-50 rounded-lg"
+                          >
+                            <Bell size={16} />
+                          </button>
+                          <div className="p-2 bg-slate-100 text-slate-400 rounded-lg group-hover:bg-brand-gold group-hover:text-white transition-all">
+                            <ArrowUpRight size={16} />
+                          </div>
+                        </div>
                       </div>
                     </div>
-                    <div className="flex justify-between items-center bg-slate-50 p-3 rounded-2xl border border-slate-100 mb-4">
-                       <span className="text-[10px] font-black text-slate-400 uppercase tracking-tighter">Project Date</span>
-                       <span className="text-xs font-bold text-slate-600">{p.date}</span>
-                    </div>
-                    <button onClick={() => { setClient(p.client); setServices(p.services); setTerms(p.terms || DEFAULT_TERMS); setCurrentProjectId(p.id); setIsDirty(false); setView('dashboard'); }} className="w-full py-4 text-sm font-black bg-brand-gold text-slate-900 rounded-2xl hover:bg-yellow-400 active:scale-[0.97] transition-all shadow-lg shadow-brand-gold/10">
-                        LOAD PROJECT
-                    </button>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           )}
@@ -513,73 +564,64 @@ export default function App() {
             <div className="p-6 pb-32">
               <Header title="Project Details" onBack={() => handleBackNavigation('welcome')} />
               <div className="mt-8 space-y-6">
-                <div className="bg-white p-6 rounded-3xl shadow-card border border-slate-50">
+                <div className="bg-white p-6 rounded-xl shadow-card">
                   <InputGroup label="Client Name" labelSize="text-xs">
-                    <input type="text" value={client.name} onChange={e => setClient({...client, name: e.target.value})} className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none focus:border-brand-gold focus:ring-4 focus:ring-brand-gold/5 transition-all font-bold" placeholder="e.g. Sameer" />
+                    <input type="text" value={client.name} onChange={e => setClient({...client, name: e.target.value})} className="w-full p-4 bg-slate-50 border border-slate-100 rounded-xl outline-none focus:border-brand-gold transition-all font-bold" placeholder="e.g. Sameer" />
                   </InputGroup>
                   <div className="h-4"></div>
                   <InputGroup label="Site Address" labelSize="text-xs">
-                    <textarea value={client.address} onChange={e => setClient({...client, address: e.target.value})} rows={3} className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none focus:border-brand-gold focus:ring-4 focus:ring-brand-gold/5 transition-all resize-none text-sm font-medium" placeholder="Full Site Address" />
+                    <textarea value={client.address} onChange={e => setClient({...client, address: e.target.value})} rows={3} className="w-full p-4 bg-slate-50 border border-slate-100 rounded-xl outline-none focus:border-brand-gold transition-all resize-none text-sm font-medium" placeholder="Full Site Address" />
                   </InputGroup>
                 </div>
               </div>
-              <Footer><button onClick={handleStartProject} className="w-full bg-slate-800 text-white py-5 rounded-2xl font-black text-lg hover:bg-slate-700 active:scale-[0.98] transition-all shadow-xl">Create Project Dashboard</button></Footer>
+              <Footer><button onClick={handleStartProject} className="w-full bg-slate-800 text-white py-5 rounded-xl font-black text-lg hover:bg-slate-700 active:scale-[0.98] transition-all shadow-xl">Create Project Dashboard</button></Footer>
             </div>
           )}
 
           {view === 'dashboard' && (
             <div className="p-4 sm:p-6 pb-44">
-              <Header title="Project Dashboard" onBack={() => handleBackNavigation('client-details')} />
-              
-              {/* COMPACT CLIENT CARD */}
-              <div className="mt-2 bg-slate-800 rounded-2xl p-4 shadow-xl relative overflow-hidden group border border-slate-700">
-                 <div className="absolute -top-12 -right-12 w-40 h-40 bg-brand-gold/10 rounded-full blur-3xl"></div>
-                 <div className="relative z-10 flex justify-between items-center gap-4">
-                   <div className="space-y-1 overflow-hidden">
-                     <div className="flex items-center gap-2">
-                        <div className="bg-brand-gold/10 p-1.5 rounded-lg text-brand-gold"><User size={14} /></div>
-                        <h3 className="text-lg font-display font-black text-white leading-tight truncate">{client.name || "Unnamed Client"}</h3>
-                     </div>
-                     <div className="flex items-center gap-2 text-slate-400">
-                        <MapPin size={10} className="text-brand-gold/50" />
-                        <span className="text-[10px] truncate max-w-[150px] font-medium">{client.address || 'No Address'}</span>
-                     </div>
-                   </div>
-                   <div className="flex flex-col items-end pr-2 bg-white/5 p-2 rounded-xl border border-white/10 backdrop-blur-sm">
-                      <div className="flex items-center gap-2 mb-0.5">
-                        <p className="text-[8px] uppercase text-brand-gold font-black tracking-widest">ESTIMATE</p>
-                        <button 
-                          onClick={() => setIsEstimateHidden(!isEstimateHidden)} 
-                          className="p-1 bg-slate-700 rounded-md hover:bg-slate-600 text-white shadow-sm transition-colors border border-slate-600"
-                          title={isEstimateHidden ? "Unhide" : "Hide"}
-                        >
-                          {isEstimateHidden ? <EyeOff size={10} /> : <Eye size={10} />}
-                        </button>
+              {/* STICKY PERSISTENT HEADER BAR */}
+              <div className="sticky top-0 z-[120] -mx-4 sm:-mx-6 mb-8 bg-slate-900 shadow-xl px-4 py-3 flex items-center justify-between border-b border-white/5">
+                <div className="flex items-center gap-3 overflow-hidden">
+                   <div className="bg-brand-gold/10 p-2 rounded-lg text-brand-gold"><User size={14} /></div>
+                   <div className="overflow-hidden">
+                      <h3 className="text-sm font-bold text-white leading-tight truncate">{client.name || "Unnamed Client"}</h3>
+                      <div className="flex items-center gap-1 text-[9px] text-slate-400 font-bold uppercase tracking-wider">
+                         <MapPin size={8} /> <span className="truncate">{client.address?.split(',')[0] || 'Site'}</span>
                       </div>
-                      <p className={`text-2xl font-display font-black text-white leading-none transition-all ${isEstimateHidden ? 'masked-estimate' : ''}`}>
-                        <span className="text-sm font-sans mr-0.5 opacity-50 font-normal">₹</span>
-                        {Math.round(services.reduce((sum, s) => sum + s.items.reduce((is, i) => is + i.cost, 0), 0)).toLocaleString()}
+                   </div>
+                </div>
+                <div className="flex items-center gap-3">
+                   <div className="flex items-center bg-slate-800/80 px-3 py-1.5 rounded-lg border border-white/10">
+                      <p className="text-[9px] font-black text-brand-gold uppercase tracking-widest mr-3">TOTAL</p>
+                      <p className={`text-sm font-black text-white leading-none ${isEstimateHidden ? 'masked-estimate' : ''}`}>
+                         ₹{Math.round(services.reduce((sum, s) => sum + s.items.reduce((is, i) => is + i.cost, 0), 0)).toLocaleString()}
                       </p>
                    </div>
-                 </div>
+                   <button 
+                      onClick={() => setIsEstimateHidden(!isEstimateHidden)} 
+                      className="p-2 bg-slate-800 rounded-lg text-white border border-slate-700"
+                    >
+                      {isEstimateHidden ? <EyeOff size={14} /> : <Eye size={14} />}
+                   </button>
+                </div>
               </div>
 
-              <div className="mt-8 space-y-4">
-                <div className="flex items-center justify-between px-1">
-                   <h3 className="font-black text-slate-800 flex items-center gap-2 uppercase text-xs tracking-widest opacity-60"><Layers size={16} className="text-brand-gold" />Service Items</h3>
-                </div>
+              <Header title="Service Items" onBack={() => handleBackNavigation('welcome')} />
+              
+              <div className="mt-4 space-y-6">
                 {services.map((s, sIdx) => {
                   const isExpanded = expandedServices[s.instanceId];
                   return (
-                    <div key={s.instanceId} className="bg-white border-l-4 border-l-yellow-500 rounded-3xl shadow-card overflow-hidden border border-slate-100 transition-all duration-200">
+                    <div key={s.instanceId} className="bg-white rounded-xl shadow-card overflow-hidden transition-all duration-200 border border-slate-100">
                       <div 
                         className="bg-white p-4 border-b border-slate-50 flex justify-between items-center cursor-pointer hover:bg-slate-50"
                         onClick={() => toggleExpand(s.instanceId)}
                       >
                         <div className="flex items-center gap-3">
                           <ServiceIcon categoryId={s.categoryId} typeId={s.typeId} name={s.name} />
-                          <div className="max-w-[140px] sm:max-w-none">
-                            <h4 className="font-black text-slate-800 text-sm tracking-tight leading-tight truncate">{s.name}</h4>
+                          <div>
+                            <h4 className="font-bold text-slate-800 text-sm tracking-tight leading-tight">{s.name}</h4>
                             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{s.items.reduce((a,b)=>a+b.netArea,0).toFixed(2)} {s.unit}</p>
                           </div>
                         </div>
@@ -588,9 +630,8 @@ export default function App() {
                             ₹ {Math.round(s.items.reduce((a,b)=>a+b.cost,0)).toLocaleString()}
                           </span>
                           <div className="flex items-center gap-1">
-                             <button onClick={(e) => { e.stopPropagation(); setEditingServiceInfo({ sIdx, name: s.name, desc: s.desc }); }} className="p-2 text-slate-400 hover:text-slate-800 transition-colors"><Settings size={16} /></button>
-                             <button onClick={(e) => { e.stopPropagation(); confirm("Remove this category?") && setServices(services.filter((_,i) => i !== sIdx)); }} className="p-2 text-slate-300 hover:text-red-600 transition-colors"><Trash2 size={16} /></button>
-                             {isExpanded ? <ChevronUp size={20} className="text-slate-400 ml-1" /> : <ChevronDown size={20} className="text-slate-400 ml-1" />}
+                             <button onClick={(e) => { e.stopPropagation(); setEditingServiceInfo({ sIdx, name: s.name, desc: s.desc }); }} className="p-2 text-slate-300 hover:text-slate-800 transition-colors"><Settings size={14} /></button>
+                             {isExpanded ? <ChevronUp size={16} className="text-slate-400 ml-1" /> : <ChevronDown size={16} className="text-slate-400 ml-1" />}
                           </div>
                         </div>
                       </div>
@@ -598,40 +639,45 @@ export default function App() {
                       {isExpanded && (
                         <div className="divide-y divide-slate-50">
                           {s.items.map((item, iIdx) => (
-                            <div key={item.id} className="p-4 flex justify-between items-center hover:bg-slate-50/50">
+                            <div key={item.id} className="p-4 flex justify-between items-center bg-slate-50/20">
                                <div>
-                                 <p className="font-bold text-slate-700 text-sm">{item.name}</p>
-                                 <p className="text-[10px] font-bold text-slate-400 mt-0.5 tracking-wider">₹{item.rate} / {s.unit.toUpperCase()}</p>
+                                 <p className="font-bold text-slate-700 text-xs">{item.name}</p>
+                                 <p className="text-[9px] font-bold text-slate-400 mt-0.5 tracking-wider italic">₹{item.rate} / {s.unit.toUpperCase()}</p>
                                </div>
-                               <div className="flex items-center gap-3">
-                                  <span className={`font-black text-slate-800 text-sm ${isEstimateHidden ? 'masked-estimate' : ''}`}>₹{Math.round(item.cost).toLocaleString()}</span>
+                               <div className="flex items-center gap-2">
+                                  <span className={`font-bold text-slate-800 text-xs ${isEstimateHidden ? 'masked-estimate' : ''}`}>₹{Math.round(item.cost).toLocaleString()}</span>
                                   <div className="flex gap-1">
-                                    <button onClick={() => editItem(sIdx, iIdx)} className="p-2 text-blue-600 bg-blue-50 rounded-xl hover:bg-blue-100"><Edit2 size={14} /></button>
-                                    <button onClick={() => deleteItem(sIdx, iIdx)} className="p-2 text-red-600 bg-red-50 rounded-xl hover:bg-red-100"><Trash2 size={14} /></button>
+                                    <button onClick={() => editItem(sIdx, iIdx)} className="p-1.5 text-blue-600 bg-white border border-slate-200 rounded-lg"><Edit2 size={12} /></button>
+                                    <button onClick={() => deleteItem(sIdx, iIdx)} className="p-1.5 text-red-600 bg-white border border-slate-200 rounded-lg"><Trash2 size={12} /></button>
                                   </div>
                                </div>
                             </div>
                           ))}
-                          <button onClick={() => { setTempService({...s}); setEditingItemIndex(null); setView('measure'); }} className="w-full py-3 bg-slate-50 text-[10px] font-black text-slate-400 border-t border-slate-100 uppercase tracking-[0.2em] hover:text-brand-gold hover:bg-white transition-all">+ Add Section</button>
+                          <button onClick={() => { setTempService({...s}); setEditingItemIndex(null); setView('measure'); }} className="w-full py-3 bg-white text-[9px] font-black text-brand-gold uppercase tracking-[0.2em] border-t border-slate-50 hover:bg-slate-50 transition-all">+ Add Section</button>
                         </div>
                       )}
                     </div>
                   );
                 })}
-                <button onClick={() => setView('service-select')} className="w-full py-5 border-2 border-dashed border-slate-200 text-slate-400 rounded-3xl font-black flex items-center justify-center gap-2 hover:border-brand-gold hover:text-brand-gold hover:bg-yellow-50/30 transition-all active:scale-[0.98] uppercase text-xs tracking-widest"><PlusCircle size={20} /> Add Service Category</button>
+                <button 
+                  onClick={() => setView('service-select')} 
+                  className="w-full h-10 border border-slate-200 bg-white text-slate-400 rounded-xl font-bold flex items-center justify-center gap-2 hover:border-brand-gold hover:text-brand-gold transition-all active:scale-[0.98] uppercase text-[10px] tracking-widest shadow-sm"
+                >
+                  <PlusCircle size={14} /> Add Service Category
+                </button>
               </div>
 
               <Footer>
                 <div className="flex gap-2 w-full items-stretch h-14">
-                   <button onClick={() => setView('measurement-sheet')} className="flex-1 bg-white border border-slate-200 text-slate-800 rounded-2xl flex flex-col items-center justify-center gap-1 hover:bg-slate-50 transition-colors shadow-sm">
-                      <RulerIcon size={20} className="text-slate-800" />
-                      <span className="text-[10px] font-black uppercase tracking-tighter">Sheet</span>
+                   <button onClick={() => setView('measurement-sheet')} className="flex-1 bg-white border border-slate-200 text-slate-800 rounded-xl flex flex-col items-center justify-center gap-1 hover:bg-slate-50 transition-colors">
+                      <RulerIcon size={18} />
+                      <span className="text-[9px] font-black uppercase tracking-tighter">Sheet</span>
                    </button>
-                   <button onClick={handleSaveClick} className="flex-1 bg-white border border-slate-200 text-slate-800 rounded-2xl flex flex-col items-center justify-center gap-1 hover:bg-slate-50 transition-colors shadow-sm active:scale-[0.95]">
-                      <Save size={20} className="text-slate-800" />
-                      <span className="text-[10px] font-black uppercase tracking-tighter">Save</span>
+                   <button onClick={handleSaveClick} className="flex-1 bg-white border border-slate-200 text-slate-800 rounded-xl flex flex-col items-center justify-center gap-1 hover:bg-slate-50 transition-colors active:scale-[0.95]">
+                      <Save size={18} />
+                      <span className="text-[9px] font-black uppercase tracking-tighter">Save</span>
                    </button>
-                   <button onClick={() => services.length > 0 ? setView('quote') : alert("No data to generate quote.")} className="flex-[2] bg-slate-800 text-white rounded-2xl font-black flex items-center justify-center gap-2 shadow-xl hover:bg-slate-700 transition-all active:scale-[0.97]"><CheckCircle size={20} className="text-brand-gold" /><span className="text-sm">Generate Quote</span></button>
+                   <button onClick={() => services.length > 0 ? setView('quote') : alert("No data to generate quote.")} className="flex-[2] bg-slate-900 text-white rounded-xl font-black flex items-center justify-center gap-2 shadow-lg hover:bg-slate-800 transition-all active:scale-[0.97]"><CheckCircle size={18} className="text-brand-gold" /><span className="text-xs">Generate Quote</span></button>
                 </div>
               </Footer>
             </div>
@@ -649,160 +695,135 @@ export default function App() {
         </div>
       </div>
 
-      {/* EDIT SERVICE CATEGORY MODAL */}
+      {/* MODALS */}
       {editingServiceInfo && (
         <div className="fixed inset-0 z-[250] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
-          <div className="w-full max-sm bg-white rounded-3xl p-6 shadow-2xl border border-slate-100">
-            <div className="mb-6">
-              <h3 className="text-xl font-black text-slate-800 mb-4 flex items-center gap-2"><Settings size={20} className="text-brand-gold" /> Category Info</h3>
-              <InputGroup label="Display Name">
-                <input type="text" className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none font-bold" value={editingServiceInfo.name} onChange={e => setEditingServiceInfo({ ...editingServiceInfo, name: e.target.value })} />
-              </InputGroup>
-              <div className="h-4"></div>
-              <InputGroup label="Service Description">
-                <textarea rows={4} className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none text-sm font-medium" value={editingServiceInfo.desc} onChange={e => setEditingServiceInfo({ ...editingServiceInfo, desc: e.target.value })} />
-              </InputGroup>
-            </div>
-            <div className="flex gap-2">
-              <button onClick={() => setEditingServiceInfo(null)} className="flex-1 py-4 bg-slate-100 text-slate-600 rounded-2xl font-black text-xs uppercase tracking-widest">Cancel</button>
+          <div className="w-full max-sm bg-white rounded-xl p-6 shadow-2xl">
+            <h3 className="text-lg font-black text-slate-800 mb-4 flex items-center gap-2"><Settings size={18} className="text-brand-gold" /> Category Info</h3>
+            <InputGroup label="Display Name" labelSize="text-[10px]"><input type="text" className="w-full h-10 px-4 bg-slate-50 border border-slate-100 rounded-xl outline-none font-bold text-sm" value={editingServiceInfo.name} onChange={e => setEditingServiceInfo({ ...editingServiceInfo, name: e.target.value })} /></InputGroup>
+            <div className="h-4"></div>
+            <InputGroup label="Service Description" labelSize="text-[10px]"><textarea rows={3} className="w-full p-4 bg-slate-50 border border-slate-100 rounded-xl outline-none text-xs font-medium" value={editingServiceInfo.desc} onChange={e => setEditingServiceInfo({ ...editingServiceInfo, desc: e.target.value })} /></InputGroup>
+            <div className="flex gap-2 mt-6">
+              <button onClick={() => setEditingServiceInfo(null)} className="flex-1 py-3 bg-slate-100 text-slate-600 rounded-xl font-bold text-[10px] uppercase tracking-widest">Cancel</button>
               <button onClick={() => {
                 const newServices = [...services];
                 newServices[editingServiceInfo.sIdx].name = editingServiceInfo.name;
                 newServices[editingServiceInfo.sIdx].desc = editingServiceInfo.desc;
                 setServices(newServices);
                 setEditingServiceInfo(null);
-              }} className="flex-1 py-4 bg-slate-800 text-white rounded-2xl font-black text-xs uppercase tracking-widest">Update</button>
+              }} className="flex-1 py-3 bg-slate-900 text-white rounded-xl font-bold text-[10px] uppercase tracking-widest">Update</button>
             </div>
           </div>
         </div>
       )}
 
-      {/* REMINDER MODAL */}
+      {editClientModal.show && editClientModal.project && (
+        <div className="fixed inset-0 z-[250] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+          <div className="w-full max-w-sm bg-white rounded-xl p-6 shadow-2xl">
+            <h3 className="text-lg font-black text-slate-800 mb-4 flex items-center gap-2"><User size={18} className="text-blue-600" /> Edit Client Details</h3>
+            <InputGroup label="Client Name" labelSize="text-[10px]"><input type="text" className="w-full h-10 px-4 bg-slate-50 border border-slate-100 rounded-xl outline-none font-bold text-sm" value={editClientModal.project.client.name} onChange={e => setEditClientModal({...editClientModal, project: { ...editClientModal.project!, client: { ...editClientModal.project!.client, name: e.target.value } }})} /></InputGroup>
+            <div className="h-4"></div>
+            <InputGroup label="Site Address" labelSize="text-[10px]"><textarea rows={3} className="w-full p-4 bg-slate-50 border border-slate-100 rounded-xl outline-none text-xs font-medium" value={editClientModal.project.client.address} onChange={e => setEditClientModal({...editClientModal, project: { ...editClientModal.project!, client: { ...editClientModal.project!.client, address: e.target.value } }})} /></InputGroup>
+            <div className="flex gap-2 mt-6">
+              <button onClick={() => setEditClientModal({ show: false, project: null })} className="flex-1 py-3 bg-slate-100 text-slate-600 rounded-xl font-bold text-[10px] uppercase tracking-widest">Cancel</button>
+              <button onClick={handleUpdateClientDetails} className="flex-1 py-3 bg-slate-900 text-white rounded-xl font-bold text-[10px] uppercase tracking-widest">Update</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {reminderModal.show && (
         <div className="fixed inset-0 z-[250] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm transition-all">
-          <div className="w-full max-w-sm bg-white rounded-3xl p-6 shadow-2xl border border-slate-100 animate-in fade-in zoom-in duration-200">
+          <div className="w-full max-w-sm bg-white rounded-xl p-6 shadow-2xl animate-in fade-in zoom-in duration-200">
             <div className="flex flex-col items-center text-center mb-6">
-              <div className="bg-brand-gold/10 text-brand-gold p-4 rounded-full mb-4 shadow-inner">
-                <Calendar size={32} />
-              </div>
-              <h3 className="text-xl font-black text-slate-800 mb-2">Set Follow-up Reminder</h3>
-              <p className="text-sm font-medium text-slate-500 mb-4">
-                Schedule a follow-up for <span className="text-slate-800 font-bold">{reminderModal.project?.client.name}</span>
-              </p>
+              <div className="bg-brand-gold/10 text-brand-gold p-4 rounded-full mb-4"><Calendar size={32} /></div>
+              <h3 className="text-lg font-black text-slate-800 mb-1">Set Follow-up Reminder</h3>
+              <p className="text-xs font-medium text-slate-500 mb-6">Schedule for <span className="text-slate-800 font-bold">{reminderModal.project?.client.name}</span></p>
               
-              <div className="w-full text-left space-y-4">
-                <InputGroup label="Select Date & Time" labelSize="text-[10px]">
-                  <div className="relative">
-                    <input 
-                      type="datetime-local" 
-                      className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none font-bold text-slate-800 focus:ring-4 focus:ring-brand-gold/10 transition-all"
-                      value={reminderModal.dueDate}
-                      onChange={e => setReminderModal(prev => ({ ...prev, dueDate: e.target.value }))}
-                    />
-                    <Clock size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+              {reminderModal.step === 'options' ? (
+                <div className="w-full space-y-2">
+                  <button onClick={() => createCalendarEvent(new Date(Date.now() + 86400000).toISOString())} className="w-full h-12 bg-slate-50 border border-slate-100 rounded-xl flex items-center justify-between px-4 hover:border-brand-gold group transition-all">
+                    <div className="flex items-center gap-3"><Clock size={16} className="text-slate-400 group-hover:text-brand-gold" /><span className="text-sm font-bold text-slate-700">In 24 Hours</span></div>
+                    <ChevronRight size={14} className="text-slate-300" />
+                  </button>
+                  <button onClick={() => createCalendarEvent(new Date(Date.now() + 86400000 * 3).toISOString())} className="w-full h-12 bg-slate-50 border border-slate-100 rounded-xl flex items-center justify-between px-4 hover:border-brand-gold group transition-all">
+                    <div className="flex items-center gap-3"><Calendar size={16} className="text-slate-400 group-hover:text-brand-gold" /><span className="text-sm font-bold text-slate-700">In 3 Days</span></div>
+                    <ChevronRight size={14} className="text-slate-300" />
+                  </button>
+                  <button onClick={() => setReminderModal(prev => ({ ...prev, step: 'custom' }))} className="w-full h-12 border-2 border-dashed border-slate-200 rounded-xl flex items-center justify-between px-4 hover:bg-slate-50 group transition-all">
+                    <div className="flex items-center gap-3"><Edit2 size={16} className="text-slate-400 group-hover:text-brand-gold" /><span className="text-sm font-bold text-slate-400 group-hover:text-brand-gold">Custom Date & Time</span></div>
+                    <ChevronRight size={14} className="text-slate-300" />
+                  </button>
+                </div>
+              ) : (
+                <div className="w-full text-left space-y-4">
+                  <InputGroup label="Select Date & Time" labelSize="text-[10px]">
+                    <div className="relative">
+                      <input type="datetime-local" className="w-full h-12 bg-slate-50 border border-slate-100 rounded-xl outline-none font-bold text-sm text-slate-800" value={reminderModal.dueDate} onChange={e => setReminderModal(prev => ({ ...prev, dueDate: e.target.value }))} />
+                      <Clock size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                    </div>
+                  </InputGroup>
+                  <div className="flex gap-2">
+                    <button onClick={() => setReminderModal(prev => ({ ...prev, step: 'options' }))} className="flex-1 py-3 bg-slate-100 text-slate-600 rounded-xl font-bold text-[10px] uppercase tracking-widest">Back</button>
+                    <button onClick={() => createCalendarEvent()} disabled={reminderModal.isSaving} className="flex-[2] py-3 bg-slate-900 text-white rounded-xl font-bold text-[10px] uppercase tracking-widest flex items-center justify-center gap-2">
+                      {reminderModal.isSaving ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle size={14} className="text-brand-gold" />} Set Custom
+                    </button>
                   </div>
-                </InputGroup>
-              </div>
+                </div>
+              )}
             </div>
-            
-            <div className="flex gap-2">
-              <button 
-                onClick={() => setReminderModal(prev => ({ ...prev, show: false, project: null }))}
-                className="flex-1 py-4 bg-slate-100 text-slate-600 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-slate-200 transition-all"
-              >
-                Cancel
-              </button>
-              <button 
-                onClick={createCalendarEvent}
-                disabled={reminderModal.isSaving}
-                className="flex-1 py-4 bg-slate-800 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-slate-700 transition-all shadow-lg flex items-center justify-center gap-2"
-              >
-                {reminderModal.isSaving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
-                {reminderModal.isSaving ? 'Saving...' : 'Set Reminder'}
-              </button>
-            </div>
+            {reminderModal.step === 'options' && (
+              <button onClick={() => setReminderModal(prev => ({ ...prev, show: false, project: null }))} className="w-full mt-4 py-3 bg-slate-100 text-slate-600 rounded-xl font-bold text-[10px] uppercase tracking-widest">Cancel</button>
+            )}
           </div>
         </div>
       )}
 
-      {/* EXIT APP MODAL */}
+      {/* REUSED APP MODALS FOR EXIT/SAVE LOGIC */}
       {exitAppModal && (
         <div className="fixed inset-0 z-[300] flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-md transition-all">
-          <div className="w-full max-w-sm bg-white rounded-3xl p-6 shadow-2xl border border-slate-100 animate-in fade-in zoom-in duration-200">
+          <div className="w-full max-w-sm bg-white rounded-xl p-6 shadow-2xl animate-in fade-in zoom-in duration-200">
             <div className="flex flex-col items-center text-center mb-6">
-              <div className="bg-red-50 text-red-500 p-4 rounded-full mb-4 shadow-inner">
-                <XCircle size={32} />
-              </div>
-              <h3 className="text-xl font-black text-slate-800 mb-2">Exit Application?</h3>
-              <p className="text-sm font-medium text-slate-500">Do you want to close the Renowix Surveyor Pro app?</p>
+              <div className="bg-red-50 text-red-500 p-4 rounded-full mb-4 shadow-inner"><XCircle size={32} /></div>
+              <h3 className="text-lg font-black text-slate-800 mb-1">Exit Application?</h3>
+              <p className="text-xs font-medium text-slate-500">Do you want to close the Renowix Surveyor Pro app?</p>
             </div>
-            
             <div className="flex gap-3">
-              <button 
-                onClick={() => setExitAppModal(false)}
-                className="flex-1 py-4 bg-slate-100 text-slate-600 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-slate-200 transition-all"
-              >
-                Cancel
-              </button>
-              <button 
-                onClick={() => window.close()} 
-                className="flex-1 py-4 bg-red-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-red-700 transition-all shadow-lg"
-              >
-                Yes, Exit
-              </button>
+              <button onClick={() => setExitAppModal(false)} className="flex-1 py-3 bg-slate-100 text-slate-600 rounded-xl font-bold text-[10px] uppercase tracking-widest">Cancel</button>
+              <button onClick={handleExitApp} className="flex-1 py-3 bg-red-600 text-white rounded-xl font-bold text-[10px] uppercase tracking-widest shadow-lg">Yes, Exit</button>
             </div>
           </div>
         </div>
       )}
 
-      {/* EXIT MODAL */}
       {exitModal.show && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm transition-all">
-          <div className="w-full max-w-sm bg-white rounded-3xl p-6 shadow-2xl border border-slate-100 animate-in fade-in zoom-in duration-200">
+          <div className="w-full max-w-sm bg-white rounded-xl p-6 shadow-2xl animate-in fade-in zoom-in duration-200">
             <div className="flex flex-col items-center text-center mb-6">
-              <div className="bg-yellow-50 text-yellow-500 p-4 rounded-full mb-4 shadow-inner">
-                <AlertTriangle size={32} />
-              </div>
-              <h3 className="text-xl font-black text-slate-800 mb-2">Save before leaving?</h3>
-              <p className="text-sm font-medium text-slate-500">You have unsaved measurements. Leaving now will discard all new data.</p>
+              <div className="bg-yellow-50 text-yellow-500 p-4 rounded-full mb-4 shadow-inner"><AlertTriangle size={32} /></div>
+              <h3 className="text-lg font-black text-slate-800 mb-1">Save before leaving?</h3>
+              <p className="text-xs font-medium text-slate-500">Leaving now will discard unsaved measurements.</p>
             </div>
-            
             <div className="flex gap-2">
-              <button 
-                onClick={() => setExitModal({ show: false, target: null })}
-                className="flex-1 py-4 bg-slate-100 text-slate-600 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-slate-200 transition-all"
-              >
-                Cancel
-              </button>
-              <button 
-                onClick={() => handleExitDecision('no')}
-                className="flex-1 py-4 bg-red-50 text-red-600 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-red-100 transition-all"
-              >
-                Don't Save
-              </button>
-              <button 
-                onClick={() => handleExitDecision('yes')}
-                className="flex-1 py-4 bg-slate-800 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-slate-700 transition-all shadow-lg"
-              >
-                Save
-              </button>
+              <button onClick={() => setExitModal({ show: false, target: null })} className="flex-1 py-3 bg-slate-100 text-slate-600 rounded-xl font-bold text-[10px] uppercase tracking-widest">Cancel</button>
+              <button onClick={() => handleExitDecision('no')} className="flex-1 py-3 bg-red-50 text-red-600 rounded-xl font-bold text-[10px] uppercase tracking-widest">Discard</button>
+              <button onClick={() => handleExitDecision('yes')} className="flex-1 py-3 bg-slate-900 text-white rounded-xl font-bold text-[10px] uppercase tracking-widest shadow-lg">Save</button>
             </div>
           </div>
         </div>
       )}
 
-      {/* SAVE DECISION MODAL */}
       {saveModal.show && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
-          <div className="w-full max-w-sm bg-white rounded-3xl p-6 shadow-2xl border border-slate-100">
+          <div className="w-full max-w-sm bg-white rounded-xl p-6 shadow-2xl">
             <div className="flex flex-col items-center text-center mb-6">
               <div className="bg-blue-50 text-blue-500 p-4 rounded-full mb-4"><Save size={32} /></div>
-              <h3 className="text-xl font-black text-slate-800 mb-2">Existing project found</h3>
-              <p className="text-sm font-medium text-slate-500">Would you like to update the current project entry or create a new duplicate copy?</p>
+              <h3 className="text-lg font-black text-slate-800 mb-1">Existing project found</h3>
+              <p className="text-xs font-medium text-slate-500">Update current or create new copy?</p>
             </div>
             <div className="flex gap-2">
-              <button onClick={() => performSave(false)} className="flex-1 py-4 bg-slate-100 text-slate-600 rounded-2xl font-black text-xs uppercase tracking-widest">New Copy</button>
-              <button onClick={() => performSave(true)} className="flex-1 py-4 bg-slate-800 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-slate-700">Update</button>
+              <button onClick={() => performSave(false)} className="flex-1 py-3 bg-slate-100 text-slate-600 rounded-xl font-bold text-[10px] uppercase tracking-widest">New Copy</button>
+              <button onClick={() => performSave(true)} className="flex-1 py-3 bg-slate-900 text-white rounded-xl font-bold text-[10px] uppercase tracking-widest">Update</button>
             </div>
             <button onClick={() => setSaveModal({ show: false })} className="w-full mt-4 text-[10px] font-bold text-slate-300 uppercase tracking-widest underline">Cancel</button>
           </div>
@@ -814,14 +835,14 @@ export default function App() {
 
 function ServiceIcon({ categoryId, typeId, name }: { categoryId: string, typeId: string, name: string }) {
   const Icon = categoryId === 'painting' ? PaintRoller : (typeId === 'kitchen_mod' ? Utensils : (typeId === 'tv_unit' ? Monitor : (typeId === 'wardrobe' ? Box : Hammer)));
-  return (<div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center text-slate-700"><Icon size={20} /></div>);
+  return (<div className="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center text-slate-700 shadow-sm"><Icon size={18} /></div>);
 }
 
 function Header({ title, onBack }: { title: string, onBack: () => void }) {
   return (
-    <div className="flex items-center gap-4 py-2 mb-4">
-      <button onClick={onBack} className="p-3 -ml-3 text-slate-400 hover:text-slate-800 bg-white shadow-sm border border-slate-100 rounded-xl"><ArrowLeft size={20} /></button>
-      <h1 className="font-display font-black text-xl text-slate-800 tracking-tight leading-tight uppercase truncate">{title}</h1>
+    <div className="flex items-center gap-4 py-1 mb-2">
+      <button onClick={onBack} className="p-2.5 -ml-2 text-slate-400 hover:text-slate-800 bg-white shadow-card rounded-lg"><ArrowLeft size={18} /></button>
+      <h1 className="font-display font-black text-base text-slate-800 tracking-tight uppercase truncate">{title}</h1>
     </div>
   );
 }
@@ -830,8 +851,8 @@ function Footer({ children }: { children?: React.ReactNode }) {
   return (<div className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-xl bg-white/95 backdrop-blur-md p-4 border-t border-slate-100 z-[100] shadow-2xl safe-bottom">{children}</div>);
 }
 
-function InputGroup({ label, children, labelSize = "text-base font-black" }: { label: string, children?: React.ReactNode, labelSize?: string }) {
-  return (<div className="space-y-2"><label className={`${labelSize} text-slate-400 uppercase tracking-widest ml-1`}>{label}</label>{children}</div>);
+function InputGroup({ label, children, labelSize = "text-[14px] font-bold" }: { label: string, children?: React.ReactNode, labelSize?: string }) {
+  return (<div className="space-y-1"><label className={`${labelSize} text-slate-400 uppercase tracking-widest ml-1`}>{label}</label>{children}</div>);
 }
 
 function ServiceSelector({ onBack, onSelect }: { onBack: () => void, onSelect: (c:string, t:string, customN?:string, customD?:string) => void }) {
@@ -842,11 +863,8 @@ function ServiceSelector({ onBack, onSelect }: { onBack: () => void, onSelect: (
   const [isAiLoading, setIsAiLoading] = useState(false);
 
   useEffect(() => { 
-    if (cat === 'custom') {
-      setType('custom_item');
-    } else {
-      setType('');
-    }
+    if (cat === 'custom') setType('custom_item');
+    else setType('');
   }, [cat]);
 
   useEffect(() => {
@@ -863,11 +881,11 @@ function ServiceSelector({ onBack, onSelect }: { onBack: () => void, onSelect: (
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       const response = await ai.models.generateContent({ 
         model: 'gemini-3-flash-preview', 
-        contents: `Strictly produce a concise 3 to 4 line paragraph description for a professional renovation service. Use simple, persuasive language. Highlight materials used and the primary benefit to the customer. Input context: "${description}"`,
+        contents: `Strictly produce a concise 3 to 4 line paragraph description for a professional renovation service. Use simple, persuasive language. Context: "${description}"`,
         config: { temperature: 0.7 } 
       });
       if (response.text) setDescription(response.text.trim());
-    } catch (e) { alert("AI error. Check API key."); }
+    } catch (e) { alert("AI error."); }
     finally { setIsAiLoading(false); }
   };
 
@@ -876,14 +894,14 @@ function ServiceSelector({ onBack, onSelect }: { onBack: () => void, onSelect: (
       <Header title="Select Service" onBack={onBack} />
       <div className="space-y-6">
         <InputGroup label="Category">
-          <select className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none focus:border-brand-gold transition-all font-bold" value={cat} onChange={e => setCat(e.target.value)}>
+          <select className="w-full h-12 px-4 bg-slate-50 border border-slate-100 rounded-xl outline-none font-bold" value={cat} onChange={e => setCat(e.target.value)}>
             <option value="">Choose Category...</option>
             {Object.values(SERVICE_DATA).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
         </InputGroup>
         {cat && cat !== 'custom' && (
           <InputGroup label="Service Type">
-            <select className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none focus:border-brand-gold transition-all font-bold" value={type} onChange={e => setType(e.target.value)}>
+            <select className="w-full h-12 px-4 bg-slate-50 border border-slate-100 rounded-xl outline-none font-bold" value={type} onChange={e => setType(e.target.value)}>
               <option value="">Choose Service...</option>
               {SERVICE_DATA[cat].items.map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
             </select>
@@ -891,21 +909,21 @@ function ServiceSelector({ onBack, onSelect }: { onBack: () => void, onSelect: (
         )}
         {cat === 'custom' && (
           <InputGroup label="Name">
-            <input type="text" className="w-full p-4 border border-slate-100 rounded-2xl outline-none focus:border-brand-gold font-bold" placeholder="e.g. Tile Work" value={customName} onChange={e => setCustomName(e.target.value)} />
+            <input type="text" className="w-full h-12 px-4 border border-slate-100 rounded-xl outline-none font-bold" placeholder="e.g. Tile Work" value={customName} onChange={e => setCustomName(e.target.value)} />
           </InputGroup>
         )}
         {cat && type && (
-          <div className="bg-yellow-50 p-5 rounded-3xl border border-dashed border-yellow-200">
-            <InputGroup label="Description (Editable)">
-              <textarea rows={6} className="w-full p-4 bg-white border border-slate-100 rounded-2xl outline-none resize-none text-sm font-medium leading-relaxed" value={description} onChange={e => setDescription(e.target.value)} />
-              <button onClick={handleAiRewrite} disabled={isAiLoading} className="mt-2 w-full bg-slate-800 text-white p-4 rounded-xl text-xs font-black uppercase tracking-widest flex items-center justify-center gap-2 hover:bg-slate-700">
-                {isAiLoading ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />} Professional AI Rewrite
+          <div className="bg-yellow-50 p-4 rounded-xl border border-dashed border-yellow-200">
+            <InputGroup label="Description (Editable)" labelSize="text-[10px]">
+              <textarea rows={5} className="w-full p-4 bg-white border border-slate-100 rounded-xl outline-none resize-none text-xs font-medium leading-relaxed" value={description} onChange={e => setDescription(e.target.value)} />
+              <button onClick={handleAiRewrite} disabled={isAiLoading} className="mt-2 w-full h-10 bg-slate-900 text-white rounded-lg text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2">
+                {isAiLoading ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />} Professional AI Rewrite
               </button>
             </InputGroup>
           </div>
         )}
       </div>
-      <Footer><button onClick={() => onSelect(cat, type, customName, description)} disabled={!cat || !type} className="w-full bg-slate-800 text-white py-5 rounded-2xl font-black text-lg disabled:opacity-50 hover:bg-slate-700 shadow-xl">Proceed</button></Footer>
+      <Footer><button onClick={() => onSelect(cat, type, customName, description)} disabled={!cat || !type} className="w-full bg-slate-900 text-white py-5 rounded-xl font-black text-lg disabled:opacity-50">Proceed</button></Footer>
     </div>
   );
 }
@@ -934,11 +952,10 @@ function MeasurementForm({ serviceContext, editingItem, onBack, onSave }: { serv
 
   const calculateTotal = (): number => {
     if (isWoodwork) {
-      const area = cabinetSections.reduce((acc, s) => {
+      return cabinetSections.reduce((acc, s) => {
         const itemArea = (s.l || 0) * (s.b || 0);
         return acc + (itemArea > 0 ? itemArea * (s.q || 1) : (s.q || 1));
       }, 0);
-      return area;
     }
     if (serviceContext.categoryId === 'painting') {
       const wArea = walls.reduce((s, w) => s + (w.width || 0), 0) * height;
@@ -956,103 +973,89 @@ function MeasurementForm({ serviceContext, editingItem, onBack, onSave }: { serv
 
   return (
     <div className="flex flex-col min-h-full relative bg-slate-50">
-      <div className="p-6 flex-1 overflow-y-auto no-scrollbar scroll-smooth">
+      <div className="p-4 sm:p-6 flex-1 overflow-y-auto no-scrollbar">
         <Header title={serviceContext.name || "Measurement"} onBack={onBack} />
-        <div className="space-y-8 pb-72">
-          <InputGroup label="ROOM / MAIN LABEL"><input className="w-full p-4 bg-white border border-slate-200 rounded-2xl outline-none focus:ring-4 focus:ring-brand-gold/10 transition-all font-bold text-xl" value={name} onChange={e => setName(e.target.value)} placeholder={serviceContext.isKitchen ? "e.g. Master Kitchen" : "e.g. Room 1"} /></InputGroup>
-          <InputGroup label="RATE (₹)"><input type="number" className="w-full p-4 bg-yellow-50 border border-yellow-200 rounded-2xl font-black text-2xl outline-none" value={rate || ''} onChange={e => setRate(parseFloat(e.target.value) || 0)} /></InputGroup>
+        <div className="space-y-6 pb-64">
+          <div className="grid grid-cols-1 gap-4">
+             <InputGroup label="ROOM / MAIN LABEL"><input className="w-full h-10 px-3 bg-white border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-brand-gold/10 transition-all font-bold text-sm" value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Master Bedroom" /></InputGroup>
+             <div className="grid grid-cols-2 gap-4">
+                <InputGroup label="RATE (₹)"><input type="number" className="w-full h-10 px-3 bg-yellow-50 border border-yellow-100 rounded-lg font-black text-sm outline-none" value={rate || ''} onChange={e => setRate(parseFloat(e.target.value) || 0)} /></InputGroup>
+                {serviceContext.categoryId === 'painting' && (
+                  <InputGroup label="HEIGHT (FT)"><input type="number" className="w-full h-10 px-3 bg-white border border-slate-200 rounded-lg outline-none font-bold text-sm" value={height} onChange={e => setHeight(parseFloat(e.target.value) || 0)}/></InputGroup>
+                )}
+             </div>
+          </div>
           
           {isWoodwork && (
-            <div className="space-y-4">
-              <span className="text-base font-black text-slate-400 uppercase tracking-widest ml-1">DIMENSIONS / SECTIONS</span>
-              <div className="space-y-4">
+            <div className="space-y-3">
+              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">SECTIONS & SIZING</span>
+              <div className="space-y-3">
                 {cabinetSections.map((s, idx) => (
-                  <div key={s.id} className="bg-white p-5 rounded-3xl border border-slate-100 shadow-sm relative">
-                    <div className="flex justify-between items-center mb-4"><input className="text-sm font-black text-slate-800 bg-transparent border-none focus:ring-0 w-full outline-none" value={s.name} onChange={e => setCabinetSections(cabinetSections.map(sec => sec.id === s.id ? {...sec, name: e.target.value} : sec))} />{cabinetSections.length > 1 && (<button onClick={() => setCabinetSections(cabinetSections.filter(sec => sec.id !== s.id))} className="text-slate-300 hover:text-red-500"><Trash2 size={16} /></button>)}</div>
-                    <div className="grid grid-cols-3 gap-4">
-                      <div className="space-y-1"><label className="text-[10px] text-slate-400 font-black uppercase">Length (ft)</label><input type="number" className="w-full p-3 bg-slate-50 rounded-xl text-sm font-black text-center" value={s.l || ''} onChange={e => setCabinetSections(cabinetSections.map(sec => sec.id === s.id ? {...sec, l: parseFloat(e.target.value) || 0} : sec))} /></div>
-                      <div className="space-y-1"><label className="text-[10px] text-slate-400 font-black uppercase">Breadth (ft)</label><input type="number" className="w-full p-3 bg-slate-50 rounded-xl text-sm font-black text-center" value={s.b || ''} onChange={e => setCabinetSections(cabinetSections.map(sec => sec.id === s.id ? {...sec, b: parseFloat(e.target.value) || 0} : sec))} /></div>
-                      <div className="space-y-1"><label className="text-[10px] text-slate-400 font-black uppercase">Qty</label><input type="number" className="w-full p-3 bg-slate-50 rounded-xl text-sm font-black text-center text-brand-gold" value={s.q || ''} onChange={e => setCabinetSections(cabinetSections.map(sec => sec.id === s.id ? {...sec, q: parseFloat(e.target.value) || 0} : sec))} /></div>
+                  <div key={s.id} className="bg-white p-3 rounded-xl border border-slate-100 shadow-sm relative">
+                    <div className="flex justify-between items-center mb-2"><input className="text-xs font-black text-slate-800 bg-transparent border-none focus:ring-0 w-full outline-none" value={s.name} onChange={e => setCabinetSections(cabinetSections.map(sec => sec.id === s.id ? {...sec, name: e.target.value} : sec))} />{cabinetSections.length > 1 && (<button onClick={() => setCabinetSections(cabinetSections.filter(sec => sec.id !== s.id))} className="text-slate-300 hover:text-red-500"><Trash2 size={12} /></button>)}</div>
+                    <div className="grid grid-cols-3 gap-2">
+                      <div className="space-y-0.5"><label className="text-[8px] text-slate-400 font-black uppercase">Len</label><input type="number" className="w-full h-8 px-2 bg-slate-50 rounded-lg text-xs font-bold text-center" value={s.l || ''} onChange={e => setCabinetSections(cabinetSections.map(sec => sec.id === s.id ? {...sec, l: parseFloat(e.target.value) || 0} : sec))} /></div>
+                      <div className="space-y-0.5"><label className="text-[8px] text-slate-400 font-black uppercase">Brd</label><input type="number" className="w-full h-8 px-2 bg-slate-50 rounded-lg text-xs font-bold text-center" value={s.b || ''} onChange={e => setCabinetSections(cabinetSections.map(sec => sec.id === s.id ? {...sec, b: parseFloat(e.target.value) || 0} : sec))} /></div>
+                      <div className="space-y-0.5"><label className="text-[8px] text-slate-400 font-black uppercase">Qty</label><input type="number" className="w-full h-8 px-2 bg-slate-50 rounded-lg text-xs font-bold text-center text-brand-gold" value={s.q || ''} onChange={e => setCabinetSections(cabinetSections.map(sec => sec.id === s.id ? {...sec, q: parseFloat(e.target.value) || 0} : sec))} /></div>
                     </div>
                   </div>
                 ))}
-                <div className="flex justify-end pr-1">
-                  <button onClick={() => setCabinetSections([...cabinetSections, { id: Date.now().toString(), name: `Section ${cabinetSections.length + 1}`, l: 0, b: 0, q: 1 }])} className="text-[11px] font-black text-brand-gold bg-brand-gold/5 px-4 py-2 rounded-full border border-brand-gold/20 hover:bg-brand-gold/10 transition-all flex items-center gap-1"><Plus size={12} /> ADD SECTION</button>
+                <div className="flex justify-end">
+                  <button onClick={() => setCabinetSections([...cabinetSections, { id: Date.now().toString(), name: `Section ${cabinetSections.length + 1}`, l: 0, b: 0, q: 1 }])} className="text-[9px] font-black text-slate-400 h-8 px-3 border border-slate-200 rounded-lg hover:bg-slate-50 transition-all flex items-center gap-1">+ ADD SECTION</button>
                 </div>
               </div>
             </div>
           )}
 
           {serviceContext.categoryId === 'painting' && (
-            <div className="space-y-8">
-              <InputGroup label="STANDARD HEIGHT (FT)"><input type="number" className="w-full p-4 bg-white border border-slate-200 rounded-2xl outline-none font-black text-2xl" value={height} onChange={e => setHeight(parseFloat(e.target.value))}/></InputGroup>
-              
-              {/* WALL WIDTHS */}
-              <div className="bg-white p-5 rounded-3xl shadow-sm border border-slate-100">
-                <span className="text-base font-black text-slate-400 uppercase tracking-widest mb-4 block">WALL WIDTHS</span>
-                <div className="grid grid-cols-2 gap-3 mb-4">
+            <div className="space-y-6">
+              <div className="bg-white p-3 rounded-xl shadow-sm border border-slate-50">
+                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 block">WALL WIDTHS</span>
+                <div className="grid grid-cols-2 gap-2 mb-3">
                   {walls.map((w, idx) => (
-                    <div key={w.id} className="relative">
-                      <input type="number" className="w-full p-4 border border-slate-100 rounded-2xl text-center bg-slate-50 focus:bg-white transition-all font-bold text-lg" value={w.width || ''} placeholder={`W ${idx+1}`} onChange={e => { const nw = [...walls]; nw[idx].width = parseFloat(e.target.value) || 0; setWalls(nw); }} />
-                      <div className="absolute top-1 left-2 text-[8px] font-black text-slate-300 uppercase">W {idx+1}</div>
+                    <div key={w.id} className="relative h-10">
+                      <input type="number" className="w-full h-full px-3 pl-8 border border-slate-100 rounded-lg text-center bg-slate-50 focus:bg-white transition-all font-bold text-xs" value={w.width || ''} placeholder="0" onChange={e => { const nw = [...walls]; nw[idx].width = parseFloat(e.target.value) || 0; setWalls(nw); }} />
+                      <div className="absolute top-1/2 left-3 -translate-y-1/2 text-[8px] font-black text-slate-300 uppercase">W{idx+1}</div>
                     </div>
                   ))}
                 </div>
                 <div className="flex justify-end">
-                  <button onClick={() => setWalls([...walls, {id: Date.now().toString(), width: 0}])} className="text-[11px] font-black text-brand-gold hover:text-yellow-700 uppercase flex items-center gap-1 px-3 py-1.5 bg-brand-gold/5 rounded-xl border border-brand-gold/10">+ ADD WALL</button>
+                  <button onClick={() => setWalls([...walls, {id: Date.now().toString(), width: 0}])} className="text-[9px] font-black text-slate-400 h-8 px-3 border border-slate-200 rounded-lg hover:bg-slate-50 transition-all">+ ADD WALL</button>
                 </div>
               </div>
 
-              {/* CEILING AREA */}
-              <div className="bg-white p-5 rounded-3xl shadow-sm border border-slate-100">
-                <span className="text-base font-black text-slate-400 uppercase tracking-widest mb-4 block">CEILING AREA</span>
-                <div className="space-y-3 mb-4">
+              <div className="bg-white p-3 rounded-xl shadow-sm border border-slate-50">
+                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 block">CEILING AREAS</span>
+                <div className="space-y-2 mb-3">
                   {ceilings.map((c, idx) => (
-                    <div key={c.id} className="flex gap-2 items-center bg-slate-50 p-3 rounded-2xl border border-transparent hover:border-brand-gold/10 transition-colors">
-                      <div className="flex-1 text-center"><label className="block text-[8px] font-black text-slate-300 mb-1">LEN</label><input type="number" className="w-full bg-transparent text-lg font-black outline-none text-center" value={c.l || ''} placeholder="0" onChange={e => { const nc = [...ceilings]; nc[idx].l = parseFloat(e.target.value) || 0; setCeilings(nc); }} /></div>
-                      <span className="text-slate-300 font-black text-lg">×</span>
-                      <div className="flex-1 text-center"><label className="block text-[8px] font-black text-slate-300 mb-1">BRD</label><input type="number" className="w-full bg-transparent text-lg font-black outline-none text-center" value={c.b || ''} placeholder="0" onChange={e => { const nc = [...ceilings]; nc[idx].b = parseFloat(e.target.value) || 0; setCeilings(nc); }} /></div>
-                      <button onClick={() => setCeilings(ceilings.filter((_,i) => i !== idx))} className="text-slate-300 hover:text-red-500 p-2 transition-colors"><Trash2 size={18}/></button>
+                    <div key={c.id} className="flex gap-2 items-center bg-slate-50 p-2 rounded-lg border border-transparent">
+                      <div className="flex-1 text-center"><label className="block text-[7px] font-black text-slate-300 mb-0.5">LEN</label><input type="number" className="w-full bg-transparent text-xs font-bold outline-none text-center" value={c.l || ''} onChange={e => { const nc = [...ceilings]; nc[idx].l = parseFloat(e.target.value) || 0; setCeilings(nc); }} /></div>
+                      <span className="text-slate-300 font-bold text-xs">×</span>
+                      <div className="flex-1 text-center"><label className="block text-[7px] font-black text-slate-300 mb-0.5">BRD</label><input type="number" className="w-full bg-transparent text-xs font-bold outline-none text-center" value={c.b || ''} onChange={e => { const nc = [...ceilings]; nc[idx].b = parseFloat(e.target.value) || 0; setCeilings(nc); }} /></div>
+                      <button onClick={() => setCeilings(ceilings.filter((_,i) => i !== idx))} className="text-slate-300 hover:text-red-500 p-1"><Trash2 size={12}/></button>
                     </div>
                   ))}
                 </div>
                 <div className="flex justify-end">
-                  <button onClick={() => setCeilings([...ceilings, { id: Date.now().toString(), l: 0, b: 0 }])} className="text-[11px] font-black text-brand-gold hover:text-yellow-700 uppercase flex items-center gap-1 px-3 py-1.5 bg-brand-gold/5 rounded-xl border border-brand-gold/10">+ ADD AREA</button>
+                  <button onClick={() => setCeilings([...ceilings, { id: Date.now().toString(), l: 0, b: 0 }])} className="text-[9px] font-black text-slate-400 h-8 px-3 border border-slate-200 rounded-lg hover:bg-slate-50 transition-all">+ ADD AREA</button>
                 </div>
               </div>
 
-              {/* EXTRA PATCH AREA */}
-              <div className="bg-white p-5 rounded-3xl shadow-sm border border-slate-100">
-                <span className="text-base font-black text-slate-400 uppercase tracking-widest mb-4 block">EXTRA PATCH AREA</span>
-                <div className="space-y-3 mb-4">
-                  {extraAreas.map((ea, idx) => (
-                    <div key={ea.id} className="flex gap-2 items-center bg-slate-50 p-3 rounded-2xl border border-transparent hover:border-brand-gold/10 transition-colors">
-                      <div className="flex-1 text-center"><label className="block text-[8px] font-black text-slate-300 mb-1">LEN</label><input type="number" className="w-full bg-transparent text-lg font-black outline-none text-center" value={ea.l || ''} placeholder="0" onChange={e => { const nea = [...extraAreas]; nea[idx].l = parseFloat(e.target.value) || 0; setExtraAreas(nea); }} /></div>
-                      <span className="text-slate-300 font-black text-lg">×</span>
-                      <div className="flex-1 text-center"><label className="block text-[8px] font-black text-slate-300 mb-1">BRD</label><input type="number" className="w-full bg-transparent text-lg font-black outline-none text-center" value={ea.b || ''} placeholder="0" onChange={e => { const nea = [...extraAreas]; nea[idx].b = parseFloat(e.target.value) || 0; setExtraAreas(nea); }} /></div>
-                      <button onClick={() => setExtraAreas(extraAreas.filter((_,i) => i !== idx))} className="text-slate-300 hover:text-red-500 p-2 transition-colors"><Trash2 size={18}/></button>
-                    </div>
-                  ))}
-                </div>
-                <div className="flex justify-end">
-                  <button onClick={() => setExtraAreas([...extraAreas, { id: Date.now().toString(), l: 0, b: 0 }])} className="text-[11px] font-black text-brand-gold hover:text-yellow-700 uppercase flex items-center gap-1 px-3 py-1.5 bg-brand-gold/5 rounded-xl border border-brand-gold/10">+ ADD PATCH</button>
-                </div>
-              </div>
-
-              {/* DEDUCTIONS */}
-              <div className="bg-white p-5 rounded-3xl shadow-sm border border-slate-100">
-                <span className="text-base font-black text-slate-400 uppercase tracking-widest mb-4 block">DEDUCTIONS</span>
-                <div className="flex gap-2 mb-6">
-                  {[ { label: 'Door', icon: DoorOpen, area: 21 }, { label: 'Window', icon: Layout, area: 12 }, { label: 'Other', icon: Plus, area: 0 } ].map(btn => (
-                    <button key={btn.label} onClick={() => setDeductions([...deductions, { id: Date.now().toString(), type: btn.label, area: btn.area, qty: 1 }])} className="flex-1 py-3 px-3 bg-slate-50 border border-slate-100 rounded-2xl flex flex-col items-center gap-2 group hover:border-brand-gold shadow-sm"><btn.icon size={18} className="text-slate-400 group-hover:text-brand-gold" /><span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">{btn.label}</span></button>
+              <div className="bg-white p-3 rounded-xl shadow-sm border border-slate-50">
+                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 block">DEDUCTIONS</span>
+                <div className="flex gap-2 mb-3">
+                  {[ { label: 'Door', icon: DoorOpen, area: 21 }, { label: 'Win', icon: Layout, area: 12 }, { label: 'Other', icon: Plus, area: 0 } ].map(btn => (
+                    <button key={btn.label} onClick={() => setDeductions([...deductions, { id: Date.now().toString(), type: btn.label, area: btn.area, qty: 1 }])} className="flex-1 h-10 bg-slate-50 border border-slate-100 rounded-lg flex items-center justify-center gap-2 group hover:border-brand-gold">
+                       <btn.icon size={12} className="text-slate-400 group-hover:text-brand-gold" />
+                       <span className="text-[8px] font-black text-slate-500 uppercase tracking-widest">{btn.label}</span>
+                    </button>
                   ))}
                 </div>
                 {deductions.map((d, idx) => (
-                  <div key={d.id} className="flex gap-4 items-center bg-slate-50 p-4 rounded-2xl border border-slate-100 mb-2">
-                    <div className="w-14"><span className="text-[8px] font-black text-slate-300 uppercase block mb-1">#{idx+1}</span></div>
-                    <div className="flex-1"><label className="text-[8px] text-slate-400 uppercase font-black block">Area</label><input type="number" className="w-full p-1 bg-transparent text-xs font-black outline-none border-b border-slate-200" value={d.area || ''} onChange={e => setDeductions(deductions.map(dd => dd.id === d.id ? {...dd, area: parseFloat(e.target.value) || 0} : dd))} /></div>
-                    <div className="flex-1"><label className="text-[8px] text-slate-400 uppercase font-black block">Qty</label><input type="number" className="w-full p-1 bg-transparent text-xs font-black outline-none border-b border-slate-200 text-center" value={d.qty || ''} onChange={e => setDeductions(deductions.map(dd => dd.id === d.id ? {...dd, qty: parseFloat(e.target.value) || 0} : dd))} /></div>
-                    <button onClick={() => setDeductions(deductions.filter(dd => dd.id !== d.id))} className="p-2 text-slate-300 hover:text-red-500"><Trash2 size={16}/></button>
+                  <div key={d.id} className="flex gap-2 items-center bg-slate-50 p-2 rounded-lg border border-slate-100 mb-2">
+                    <div className="flex-1"><label className="text-[7px] text-slate-400 uppercase font-black">Area</label><input type="number" className="w-full bg-transparent text-xs font-bold outline-none" value={d.area || ''} onChange={e => setDeductions(deductions.map(dd => dd.id === d.id ? {...dd, area: parseFloat(e.target.value) || 0} : dd))} /></div>
+                    <div className="flex-1"><label className="text-[7px] text-slate-400 uppercase font-black">Qty</label><input type="number" className="w-full bg-transparent text-xs font-bold outline-none text-center" value={d.qty || ''} onChange={e => setDeductions(deductions.map(dd => dd.id === d.id ? {...dd, qty: parseFloat(e.target.value) || 0} : dd))} /></div>
+                    <button onClick={() => setDeductions(deductions.filter(dd => dd.id !== d.id))} className="p-1 text-slate-300 hover:text-red-500"><Trash2 size={12}/></button>
                   </div>
                 ))}
               </div>
@@ -1061,27 +1064,23 @@ function MeasurementForm({ serviceContext, editingItem, onBack, onSave }: { serv
         </div>
       </div>
       
-      {/* Sticky Subtotal Bar & Large Save Button */}
       <div className="fixed bottom-0 left-0 right-0 z-[110] w-full flex justify-center p-4 safe-bottom">
-        <div className="w-full max-w-xl flex flex-col gap-3">
-          <div className="flex justify-between items-center bg-slate-900/95 backdrop-blur-md text-white py-5 px-8 rounded-3xl shadow-2xl border border-white/5">
+        <div className="w-full max-w-xl flex flex-col gap-2">
+          <div className="flex justify-between items-center bg-slate-900 shadow-2xl text-white py-4 px-6 rounded-xl border border-white/5">
             <div className="text-left">
-              <p className="text-[10px] text-slate-400 uppercase font-black tracking-[0.2em] leading-none mb-1.5">NET QUANTITY</p>
-              <div className="flex items-baseline gap-1.5">
-                <span className="font-black text-2xl leading-none">{netArea.toFixed(2)}</span>
-                <span className="text-xs opacity-40 uppercase font-bold">{serviceContext.unit}</span>
-              </div>
+              <p className="text-[8px] text-slate-400 uppercase font-black tracking-widest mb-0.5">QUANTITY</p>
+              <p className="font-black text-xl leading-none">{netArea.toFixed(2)} <span className="text-[10px] opacity-40 uppercase">{serviceContext.unit}</span></p>
             </div>
             <div className="text-right">
-              <p className="text-[10px] text-slate-400 uppercase font-black tracking-[0.2em] leading-none mb-1.5">SUBTOTAL</p>
-              <p className="font-black text-3xl text-brand-gold leading-none">₹{Math.round(cost).toLocaleString()}</p>
+              <p className="text-[8px] text-slate-400 uppercase font-black tracking-widest mb-0.5">SUBTOTAL</p>
+              <p className="font-black text-2xl text-brand-gold leading-none">₹{Math.round(cost).toLocaleString()}</p>
             </div>
           </div>
           <button 
             onClick={() => onSave({ id: editingItem?.id || Date.now().toString(), name: name || "Item", netArea, rate, cost, l, b, q, height, walls, ceilings, extraAreas, cabinetSections, deductions })} 
-            className="w-full bg-slate-800 text-white h-16 rounded-2xl font-black text-base hover:bg-slate-700 shadow-xl uppercase tracking-[0.2em] flex items-center justify-center gap-3 transition-transform active:scale-[0.98] border-b-4 border-slate-950"
+            className="w-full h-14 bg-slate-800 text-white rounded-xl font-black text-sm hover:bg-slate-700 shadow-xl uppercase tracking-widest flex items-center justify-center gap-2 border-b-2 border-slate-950 transition-transform active:scale-[0.98]"
           >
-            <CheckCircle size={24} className="text-brand-gold" /> save measurement
+            <CheckCircle size={18} className="text-brand-gold" /> Save Measurement
           </button>
         </div>
       </div>
@@ -1101,154 +1100,43 @@ function QuoteView({ client, services, terms: initialTerms, onBack }: { client: 
   return (
     <div className="bg-white min-h-screen flex flex-col items-center p-0">
       <div className="w-full max-w-[210mm] mt-6 mb-6 flex justify-between no-print items-center px-4">
-        <button onClick={onBack} className="bg-white px-5 py-3 rounded-2xl border border-slate-200 text-xs font-black uppercase flex items-center gap-2 shadow-sm"><ArrowLeft size={16} /> Dashboard</button>
-        <button onClick={() => window.print()} className="bg-slate-800 text-white px-6 py-3 rounded-2xl text-xs font-black uppercase flex items-center gap-2 shadow-xl hover:bg-slate-700"><Printer size={16} /> Print Quote</button>
+        <button onClick={onBack} className="bg-white px-5 py-3 rounded-xl border border-slate-200 text-xs font-black uppercase flex items-center gap-2 shadow-sm"><ArrowLeft size={16} /> Dashboard</button>
+        <button onClick={() => window.print()} className="bg-slate-800 text-white px-6 py-3 rounded-xl text-xs font-black uppercase flex items-center gap-2 shadow-xl hover:bg-slate-700"><Printer size={16} /> Print Quote</button>
       </div>
-      
-      {/* High-Contrast Luxury A4 Container - Structured Flow */}
       <div className="w-full max-w-[210mm] bg-white px-10 py-10 print:px-6 print:py-6 text-slate-900 flex flex-col font-sans relative">
-        
-        {/* 1. Header Section */}
         <div className="flex justify-between items-center border-b-4 border-slate-900 pb-4 mb-6 flex-shrink-0">
-          <div className="flex items-center gap-8">
-            <img src={LOGO_URL} className="h-24 object-contain" />
-            <div>
-              <h1 className="text-4xl font-black uppercase text-slate-900 leading-none mb-1 tracking-tighter">Renowix Renovations</h1>
-              <p className="text-sm text-slate-500 font-bold uppercase tracking-[0.3em]">Excellence in Home Interiors</p>
-            </div>
-          </div>
-          <div className="text-right">
-            <h2 className="text-5xl font-black text-slate-100 uppercase tracking-tighter leading-none select-none">Quote</h2>
-          </div>
+          <div className="flex items-center gap-8"><img src={LOGO_URL} className="h-24 object-contain" /><div><h1 className="text-4xl font-black uppercase text-slate-900 leading-none mb-1 tracking-tighter">Renowix Renovations</h1><p className="text-sm text-slate-500 font-bold uppercase tracking-[0.3em]">Excellence in Home Interiors</p></div></div>
+          <div className="text-right"><h2 className="text-5xl font-black text-slate-100 uppercase tracking-tighter leading-none select-none">Quote</h2></div>
         </div>
-
-        {/* 2. Metadata Grid */}
         <div className="grid grid-cols-2 gap-8 mb-10 flex-shrink-0">
-          <div className="bg-slate-50 border border-slate-200 p-6 rounded-sm">
-            <h4 className="text-[12px] font-black text-slate-600 uppercase tracking-widest mb-4 border-b pb-2">Client Profile</h4>
-            <p className="text-2xl font-black text-slate-900 mb-1">{client.name}</p>
-            <p className="text-sm font-medium text-slate-700 leading-relaxed italic">{client.address || "Address pending verification"}</p>
-          </div>
-          <div className="bg-slate-50 border border-slate-200 p-6 rounded-sm">
-            <h4 className="text-[12px] font-black text-slate-600 uppercase tracking-widest mb-4 border-b pb-2">Quote Reference</h4>
-            <div className="space-y-3">
-              <div className="flex justify-between items-baseline"><span className="text-[11px] text-slate-500 font-bold uppercase">Ref ID</span><span className="text-sm font-black text-slate-900">#RX-{Math.floor(Date.now() / 10000).toString().slice(-6)}</span></div>
-              <div className="flex justify-between items-baseline"><span className="text-[11px] text-slate-500 font-bold uppercase">Date</span><span className="text-sm font-black text-slate-900">{date}</span></div>
-            </div>
-          </div>
+          <div className="bg-slate-50 border border-slate-200 p-6 rounded-sm"><h4 className="text-[12px] font-black text-slate-600 uppercase tracking-widest mb-4 border-b pb-2">Client Profile</h4><p className="text-2xl font-black text-slate-900 mb-1">{client.name}</p><p className="text-sm font-medium text-slate-700 leading-relaxed italic">{client.address || "Address pending verification"}</p></div>
+          <div className="bg-slate-50 border border-slate-200 p-6 rounded-sm"><h4 className="text-[12px] font-black text-slate-600 uppercase tracking-widest mb-4 border-b pb-2">Quote Reference</h4><div className="space-y-3"><div className="flex justify-between items-baseline"><span className="text-[11px] text-slate-500 font-bold uppercase">Ref ID</span><span className="text-sm font-black text-slate-900">#RX-{Math.floor(Date.now() / 10000).toString().slice(-6)}</span></div><div className="flex justify-between items-baseline"><span className="text-[11px] text-slate-500 font-bold uppercase">Date</span><span className="text-sm font-black text-slate-900">{date}</span></div></div></div>
         </div>
-
-        {/* 3. Structured Table Area */}
         <div className="flex-grow">
           <table className="w-full border-collapse table-fixed">
-            <thead>
-              <tr className="bg-slate-900 text-white border border-slate-900">
-                <th className="py-4 px-4 text-left font-black uppercase tracking-widest text-[11px]" style={{width: '50px'}}>#</th>
-                <th className="py-4 px-6 text-left font-black uppercase tracking-widest text-[11px]">Service Scope & Room Inclusions</th>
-                <th className="py-4 px-4 text-right font-black uppercase tracking-widest text-[11px]" style={{width: '90px'}}>Qty</th>
-                <th className="py-4 px-4 text-right font-black uppercase tracking-widest text-[11px]" style={{width: '110px'}}>Rate</th>
-                <th className="py-4 px-6 text-right font-black uppercase tracking-widest text-[11px]" style={{width: '140px'}}>Amount (₹)</th>
-              </tr>
-            </thead>
+            <thead><tr className="bg-slate-900 text-white border border-slate-900"><th className="py-4 px-4 text-left font-black uppercase tracking-widest text-[11px]" style={{width: '50px'}}>#</th><th className="py-4 px-6 text-left font-black uppercase tracking-widest text-[11px]">Service Scope & Room Inclusions</th><th className="py-4 px-4 text-right font-black uppercase tracking-widest text-[11px]" style={{width: '90px'}}>Qty</th><th className="py-4 px-4 text-right font-black uppercase tracking-widest text-[11px]" style={{width: '110px'}}>Rate</th><th className="py-4 px-6 text-right font-black uppercase tracking-widest text-[11px]" style={{width: '140px'}}>Amount (₹)</th></tr></thead>
             <tbody>
               {services.map((s, idx) => (
                 <tr key={idx} className="border border-slate-200 break-inside-avoid">
-                  <td className="py-5 px-4 align-top text-lg font-bold text-slate-800 bg-slate-50/30 border-r border-slate-200">
-                    {(idx + 1).toString().padStart(2, '0')}
-                  </td>
-                  <td className="py-5 px-6 align-top border-r border-slate-200">
-                    <h3 className="text-lg font-black text-slate-900 mb-1 uppercase leading-tight tracking-tight">{s.name}</h3>
-                    <p className="text-[11px] text-slate-600 leading-[1.6] font-medium mb-4">{s.desc}</p>
-                    <div className="flex items-center gap-3 bg-slate-50 px-3 py-1.5 rounded-sm border border-slate-100 w-fit">
-                      <span className="text-[8px] font-black uppercase text-slate-400 tracking-tighter border-r pr-2">Site Rooms</span>
-                      <p className="text-[10px] font-bold text-slate-800 uppercase tracking-tight leading-none">
-                        {s.items.map(item => item.name).join(', ')}
-                      </p>
-                    </div>
-                  </td>
-                  <td className="py-5 px-4 align-top text-right font-bold text-base text-slate-900 border-r border-slate-200 bg-slate-50/10">
-                    {s.items.reduce((a, b) => a + b.netArea, 0).toFixed(2)}
-                  </td>
-                  <td className="py-5 px-4 align-top text-right font-semibold text-base text-slate-600 border-r border-slate-200">
-                    ₹{s.items[0]?.rate.toLocaleString()}
-                  </td>
-                  <td className="py-5 px-6 align-top text-right font-black text-lg text-slate-900 bg-slate-50/20">
-                    ₹{Math.round(s.items.reduce((a, b) => a + b.cost, 0)).toLocaleString()}
-                  </td>
+                  <td className="py-5 px-4 align-top text-lg font-bold text-slate-800 bg-slate-50/30 border-r border-slate-200">{(idx + 1).toString().padStart(2, '0')}</td>
+                  <td className="py-5 px-6 align-top border-r border-slate-200"><h3 className="text-lg font-black text-slate-900 mb-1 uppercase leading-tight tracking-tight">{s.name}</h3><p className="text-[11px] text-slate-600 leading-[1.6] font-medium mb-4">{s.desc}</p><div className="flex items-center gap-3 bg-slate-50 px-3 py-1.5 rounded-sm border border-slate-100 w-fit"><span className="text-[8px] font-black uppercase text-slate-400 tracking-tighter border-r pr-2">Site Rooms</span><p className="text-[10px] font-bold text-slate-800 uppercase tracking-tight leading-none">{s.items.map(item => item.name).join(', ')}</p></div></td>
+                  <td className="py-5 px-4 align-top text-right font-bold text-base text-slate-900 border-r border-slate-200 bg-slate-50/10">{s.items.reduce((a, b) => a + b.netArea, 0).toFixed(2)}</td>
+                  <td className="py-5 px-4 align-top text-right font-semibold text-base text-slate-600 border-r border-slate-200">₹{s.items[0]?.rate.toLocaleString()}</td>
+                  <td className="py-5 px-6 align-top text-right font-black text-lg text-slate-900 bg-slate-50/20">₹{Math.round(s.items.reduce((a, b) => a + b.cost, 0)).toLocaleString()}</td>
                 </tr>
               ))}
             </tbody>
           </table>
-
-          {/* Table Summary Footer */}
-          <div className="flex justify-end p-6 border-x border-b border-slate-200 bg-slate-50/40 mb-6">
-            <div className="text-right">
-              <span className="text-[12px] font-black uppercase text-slate-500 tracking-[0.2em] mr-6">Sub-Total Cost</span>
-              <span className="text-xl font-black text-slate-800 tracking-tight">₹{Math.round(subTotal).toLocaleString()}</span>
-            </div>
-          </div>
+          <div className="flex justify-end p-6 border-x border-b border-slate-200 bg-slate-50/40 mb-6"><div className="text-right"><span className="text-[12px] font-black uppercase text-slate-500 tracking-[0.2em] mr-6">Sub-Total Cost</span><span className="text-xl font-black text-slate-800 tracking-tight">₹{Math.round(subTotal).toLocaleString()}</span></div></div>
         </div>
-
-        {/* 4. Financial Summary & Totals - Restored Classic Card Style */}
         <div className="flex flex-col items-end flex-shrink-0 break-inside-avoid">
           <div className="w-full max-w-sm flex flex-col gap-4">
-            {/* Discount Adjustment Area (No Print) */}
-            <div className="no-print bg-slate-50 p-4 rounded border border-slate-100 mb-2">
-              <div className="flex items-center justify-between mb-3"><span className="text-[9px] font-black uppercase text-slate-400 tracking-widest">Apply Discount</span><div className="flex gap-1">{['none', 'percent', 'fixed'].map(t => (<button key={t} onClick={() => setDiscountType(t as any)} className={`px-2 py-1 rounded text-[7px] font-black uppercase transition-all ${discountType === t ? 'bg-slate-900 text-white' : 'bg-white border border-slate-200 text-slate-300'}`}>{t}</button>))}</div></div>
-              {discountType !== 'none' && (<input type="number" className="w-full p-2 border rounded text-xs font-bold outline-none" placeholder={discountType === 'percent' ? "% Percent" : "Fixed Amount (₹)"} value={discountValue || ''} onChange={e => setDiscountValue(parseFloat(e.target.value) || 0)} />)}
-            </div>
-
-            {/* FINAL PAYABLE CARD - AS PER IMAGE */}
-            <div className="bg-[#1E293B] text-white p-6 rounded-[1.5rem] shadow-xl flex items-center justify-between w-full relative overflow-hidden group">
-              <div className="flex flex-col">
-                <span className="text-[#EAB308] font-black text-lg tracking-[0.1em] leading-tight uppercase">Final</span>
-                <span className="text-[#EAB308] font-black text-lg tracking-[0.1em] leading-tight uppercase">Payable</span>
-              </div>
-              <div className="text-4xl font-black tracking-tight flex items-baseline gap-1">
-                <span className="text-2xl opacity-80">₹</span>
-                {Math.round(finalTotal).toLocaleString()}
-              </div>
-            </div>
-            
-            {discountAmount > 0 && (
-              <p className="text-[10px] font-black text-brand-gold italic text-right px-2">
-                Applied Privilege Discount: -₹{Math.round(discountAmount).toLocaleString()}
-              </p>
-            )}
+            <div className="no-print bg-slate-50 p-4 rounded border border-slate-100 mb-2"><div className="flex items-center justify-between mb-3"><span className="text-[9px] font-black uppercase text-slate-400 tracking-widest">Apply Discount</span><div className="flex gap-1">{['none', 'percent', 'fixed'].map(t => (<button key={t} onClick={() => setDiscountType(t as any)} className={`px-2 py-1 rounded text-[7px] font-black uppercase transition-all ${discountType === t ? 'bg-slate-900 text-white' : 'bg-white border border-slate-200 text-slate-300'}`}>{t}</button>))}</div></div>{discountType !== 'none' && (<input type="number" className="w-full p-2 border rounded text-xs font-bold outline-none" placeholder={discountType === 'percent' ? "% Percent" : "Fixed Amount (₹)"} value={discountValue || ''} onChange={e => setDiscountValue(parseFloat(e.target.value) || 0)} />)}</div>
+            <div className="bg-[#1E293B] text-white p-6 rounded-[1.5rem] shadow-xl flex items-center justify-between w-full relative overflow-hidden group"><div className="flex flex-col"><span className="text-[#EAB308] font-black text-lg tracking-[0.1em] leading-tight uppercase">Final</span><span className="text-[#EAB308] font-black text-lg tracking-[0.1em] leading-tight uppercase">Payable</span></div><div className="text-4xl font-black tracking-tight flex items-baseline gap-1"><span className="text-2xl opacity-80">₹</span>{Math.round(finalTotal).toLocaleString()}</div></div>
+            {discountAmount > 0 && (<p className="text-[10px] font-black text-brand-gold italic text-right px-2">Applied Privilege Discount: -₹{Math.round(discountAmount).toLocaleString()}</p>)}
           </div>
         </div>
-
-        {/* 5. Validation Block (Terms & Signatures) */}
-        <div className="mt-8 flex flex-col gap-8 border-t-2 border-slate-100 pt-6 break-inside-avoid">
-          <div className="flex flex-col gap-2">
-             <h4 className="text-[13px] font-black text-slate-900 uppercase tracking-normal mb-2">Contractual Terms & Conditions</h4>
-             <div className="no-print">
-               <textarea rows={5} className="w-full text-sm p-4 bg-slate-50 border-none rounded font-medium leading-relaxed outline-none text-slate-600" value={terms} onChange={e => setTerms(e.target.value)} />
-             </div>
-             <div className="print-only text-sm leading-[1.8] text-slate-700 font-semibold tracking-tight whitespace-pre-wrap px-4 italic border-l-4 border-slate-200">
-               {terms}
-             </div>
-          </div>
-
-          <div className="flex justify-between items-end pb-4 mt-4">
-            <div className="w-72 text-center">
-              <div className="h-20 border-b-2 border-slate-900 mb-3 opacity-10"></div>
-              <p className="text-[11px] font-black uppercase text-slate-900 tracking-widest">Authorized Executive</p>
-              <p className="text-[9px] text-slate-400 font-bold uppercase mt-1 tracking-normal">Renowix Project Lead</p>
-            </div>
-            <div className="w-72 text-center">
-              <div className="h-20 border-b-2 border-slate-200 mb-3 opacity-10"></div>
-              <p className="text-[11px] font-black uppercase text-slate-900 tracking-widest">Client Authentication</p>
-              <p className="text-[9px] text-slate-400 font-bold uppercase mt-1 tracking-normal">Acceptance Sign</p>
-            </div>
-          </div>
-
-          <div className="pt-6 border-t border-slate-50 flex justify-between items-center opacity-30">
-            <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">This is a system generated quotation</p>
-            <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Surveyor Pro Suite</p>
-          </div>
-        </div>
-
+        <div className="mt-8 flex flex-col gap-8 border-t-2 border-slate-100 pt-6 break-inside-avoid"><div className="flex flex-col gap-2"><h4 className="text-[13px] font-black text-slate-900 uppercase tracking-normal mb-2">Contractual Terms & Conditions</h4><div className="no-print"><textarea rows={5} className="w-full text-sm p-4 bg-slate-50 border-none rounded font-medium leading-relaxed outline-none text-slate-600" value={terms} onChange={e => setTerms(e.target.value)} /></div><div className="print-only text-sm leading-[1.8] text-slate-700 font-semibold tracking-tight whitespace-pre-wrap px-4 italic border-l-4 border-slate-200">{terms}</div></div><div className="flex justify-between items-end pb-4 mt-4"><div className="w-72 text-center"><div className="h-20 border-b-2 border-slate-900 mb-3 opacity-10"></div><p className="text-[11px] font-black uppercase text-slate-900 tracking-widest">Authorized Executive</p><p className="text-[9px] text-slate-400 font-bold uppercase mt-1 tracking-normal">Renowix Project Lead</p></div><div className="w-72 text-center"><div className="h-20 border-b-2 border-slate-200 mb-3 opacity-10"></div><p className="text-[11px] font-black uppercase text-slate-900 tracking-widest">Client Authentication</p><p className="text-[9px] text-slate-400 font-bold uppercase mt-1 tracking-normal">Acceptance Sign</p></div></div><div className="pt-6 border-t border-slate-50 flex justify-between items-center opacity-30"><p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">This is a system generated quotation</p><p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Surveyor Pro Suite</p></div></div>
       </div>
     </div>
   );
@@ -1258,78 +1146,8 @@ function MeasurementSheetView({ client, services, onBack }: { client: ClientDeta
   const date = useMemo(() => new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric' }), []);
   return (
     <div className="bg-slate-100 min-h-screen flex flex-col items-center p-4 print:p-0">
-      <div className="w-full max-w-[210mm] mb-6 flex justify-between no-print items-center px-2">
-        <button onClick={onBack} className="bg-white px-5 py-3 rounded-2xl border border-slate-200 text-xs font-black uppercase flex items-center gap-2 shadow-sm"><ArrowLeft size={16} /> Dashboard</button>
-        <button onClick={() => window.print()} className="bg-slate-800 text-white px-6 py-3 rounded-2xl text-xs font-black uppercase flex items-center gap-2 shadow-xl hover:bg-slate-700"><Printer size={16} /> Print Sheet</button>
-      </div>
-      <div className="w-full max-w-[210mm] bg-white min-h-[297mm] px-10 py-10 print:px-6 print:py-6 text-slate-900 shadow-2xl print:shadow-none flex flex-col">
-        <div className="flex justify-between items-center border-b-2 border-slate-900 pb-6 mb-8">
-          <div className="flex items-center gap-6"><img src={LOGO_URL} className="h-16 object-contain" /><div><h1 className="text-2xl font-black uppercase text-slate-800 leading-none">Renowix Renovations</h1><p className="text-[9px] text-slate-400 font-bold uppercase mt-1">Audit Measurement Profile</p></div></div>
-          <div className="text-right"><h2 className="text-4xl font-black text-slate-100 print:text-slate-200 uppercase tracking-tighter leading-none">M-Sheet</h2></div>
-        </div>
-        
-        <div className="grid grid-cols-2 gap-8 mb-8">
-          <div className="p-4 bg-slate-50 border border-slate-100 rounded-2xl">
-            <h4 className="text-[9px] font-black text-slate-400 uppercase mb-2 border-b pb-1 tracking-widest">Client Name & Address</h4>
-            <p className="text-lg font-black text-slate-800">{client.name}</p>
-            <p className="text-[10px] font-medium text-slate-500 mt-1 whitespace-pre-wrap">{client.address || "Address pending verification"}</p>
-          </div>
-          <div className="p-4 bg-slate-50 border border-slate-100 rounded-2xl">
-            <h4 className="text-[9px] font-black text-slate-400 uppercase mb-2 border-b pb-1 tracking-widest">Metadata</h4>
-            <div className="flex flex-col gap-1">
-              <div className="flex justify-between"><span className="text-[8px] font-bold text-slate-400">AUDIT ID</span><span className="text-xs font-black text-slate-800 uppercase">#MSR-{Math.floor(Date.now() / 1000).toString().slice(-6)}</span></div>
-              <div className="flex justify-between"><span className="text-[8px] font-bold text-slate-400">SITE DATE</span><span className="text-xs font-black text-slate-800 uppercase">{date}</span></div>
-            </div>
-          </div>
-        </div>
-        
-        <div className="flex-1">
-          <table className="w-full text-[10px] border-collapse border border-slate-200">
-            <thead className="bg-slate-100">
-              <tr className="border-y-2 border-slate-900">
-                <th className="py-3 px-3 text-left font-black uppercase w-10">S#</th>
-                <th className="py-3 px-4 text-left font-black uppercase">Category / Room Section</th>
-                <th className="py-3 px-4 text-left font-black uppercase">Detailed Calculations</th>
-                <th className="py-3 px-4 text-right font-black uppercase w-24">Net Area</th>
-                <th className="py-3 px-4 text-left font-black uppercase w-16">Unit</th>
-              </tr>
-            </thead>
-            <tbody>
-              {services.map((s, sIdx) => (
-                <React.Fragment key={s.instanceId}>
-                  <tr className="bg-slate-50"><td colSpan={5} className="py-2.5 px-3 font-black text-[10px] uppercase text-slate-900 bg-slate-100 border-y border-slate-200">CATEGORY: {s.name}</td></tr>
-                  {s.items.map((item, iIdx) => (
-                    <tr key={item.id} className="align-top border-b border-slate-100 break-inside-avoid">
-                      <td className="py-5 px-3 text-slate-300 font-black">{(iIdx + 1)}</td>
-                      <td className="py-5 px-4 font-black text-slate-800 uppercase text-[11px]">{item.name}</td>
-                      <td className="py-5 px-4 text-slate-500 font-medium">
-                        <div className="flex flex-wrap gap-1">
-                          {item.cabinetSections?.map((cab, ci) => (
-                            <span key={cab.id} className="text-[10px]">{cab.name} ({cab.l}x{cab.b})x{cab.q}{ci < item.cabinetSections!.length - 1 ? ', ' : ''}</span>
-                          ))}
-                        </div>
-                        {s.categoryId === 'painting' && (
-                          <div className="mt-2 text-[8px] text-slate-400 italic">
-                            {item.walls?.length ? `Walls: ${item.walls.map(w => w.width).join('+')} × ${item.height}H` : ''}
-                            {item.deductions?.length ? ` | Deductions: -${item.deductions.reduce((acc, d) => acc + (d.area * d.qty), 0)}` : ''}
-                          </div>
-                        )}
-                      </td>
-                      <td className="py-5 px-4 text-right font-black text-slate-900 text-[12px]">{item.netArea.toFixed(2)}</td>
-                      <td className="py-5 px-4 text-left font-black text-slate-200 uppercase text-[8px]">{s.unit}</td>
-                    </tr>
-                  ))}
-                </React.Fragment>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        
-        <div className="mt-12 flex justify-between items-end border-t border-slate-100 pt-8 break-inside-avoid">
-          <div className="text-left w-56"><div className="h-10 border-b-2 border-slate-900"></div><p className="text-[9px] font-black uppercase text-slate-300 text-center mt-2 tracking-widest">Surveyor Authentication</p></div>
-          <div className="text-right w-56"><div className="h-10 border-b-2 border-slate-100"></div><p className="text-[9px] font-black uppercase text-slate-300 text-center mt-2 tracking-widest">Client Acknowledgement</p></div>
-        </div>
-      </div>
+      <div className="w-full max-w-[210mm] mb-6 flex justify-between no-print items-center px-2"><button onClick={onBack} className="bg-white px-5 py-3 rounded-xl border border-slate-200 text-xs font-black uppercase flex items-center gap-2 shadow-sm"><ArrowLeft size={16} /> Dashboard</button><button onClick={() => window.print()} className="bg-slate-800 text-white px-6 py-3 rounded-xl text-xs font-black uppercase flex items-center gap-2 shadow-xl hover:bg-slate-700"><Printer size={16} /> Print Sheet</button></div>
+      <div className="w-full max-w-[210mm] bg-white min-h-[297mm] px-10 py-10 print:px-6 print:py-6 text-slate-900 shadow-2xl print:shadow-none flex flex-col"><div className="flex justify-between items-center border-b-2 border-slate-900 pb-6 mb-8"><div className="flex items-center gap-6"><img src={LOGO_URL} className="h-16 object-contain" /><div><h1 className="text-2xl font-black uppercase text-slate-800 leading-none">Renowix Renovations</h1><p className="text-[9px] text-slate-400 font-bold uppercase mt-1">Audit Measurement Profile</p></div></div><div className="text-right"><h2 className="text-4xl font-black text-slate-100 print:text-slate-200 uppercase tracking-tighter leading-none">M-Sheet</h2></div></div><div className="grid grid-cols-2 gap-8 mb-8"><div className="p-4 bg-slate-50 border border-slate-100 rounded-xl"><h4 className="text-[9px] font-black text-slate-400 uppercase mb-2 border-b pb-1 tracking-widest">Client Name & Address</h4><p className="text-lg font-black text-slate-800">{client.name}</p><p className="text-[10px] font-medium text-slate-500 mt-1 whitespace-pre-wrap">{client.address || "Address pending verification"}</p></div><div className="p-4 bg-slate-50 border border-slate-100 rounded-xl"><h4 className="text-[9px] font-black text-slate-400 uppercase mb-2 border-b pb-1 tracking-widest">Metadata</h4><div className="flex flex-col gap-1"><div className="flex justify-between"><span className="text-[8px] font-bold text-slate-400">AUDIT ID</span><span className="text-xs font-black text-slate-800 uppercase">#MSR-{Math.floor(Date.now() / 1000).toString().slice(-6)}</span></div><div className="flex justify-between"><span className="text-[8px] font-bold text-slate-400">SITE DATE</span><span className="text-xs font-black text-slate-800 uppercase">{date}</span></div></div></div></div><div className="flex-1"><table className="w-full text-[10px] border-collapse border border-slate-200"><thead className="bg-slate-100"><tr className="border-y-2 border-slate-900"><th className="py-3 px-3 text-left font-black uppercase w-10">S#</th><th className="py-3 px-4 text-left font-black uppercase">Category / Room Section</th><th className="py-3 px-4 text-left font-black uppercase">Detailed Calculations</th><th className="py-3 px-4 text-right font-black uppercase w-24">Net Area</th><th className="py-3 px-4 text-left font-black uppercase w-16">Unit</th></tr></thead><tbody>{services.map((s, sIdx) => (<React.Fragment key={s.instanceId}><tr className="bg-slate-50"><td colSpan={5} className="py-2.5 px-3 font-black text-[10px] uppercase text-slate-900 bg-slate-100 border-y border-slate-200">CATEGORY: {s.name}</td></tr>{s.items.map((item, iIdx) => (<tr key={item.id} className="align-top border-b border-slate-100 break-inside-avoid"><td className="py-5 px-3 text-slate-300 font-black">{(iIdx + 1)}</td><td className="py-5 px-4 font-black text-slate-800 uppercase text-[11px]">{item.name}</td><td className="py-5 px-4 text-slate-500 font-medium"><div className="flex flex-wrap gap-1">{item.cabinetSections?.map((cab, ci) => (<span key={cab.id} className="text-[10px]">{cab.name} ({cab.l}x{cab.b})x{cab.q}{ci < item.cabinetSections!.length - 1 ? ', ' : ''}</span>))}</div>{s.categoryId === 'painting' && (<div className="mt-2 text-[8px] text-slate-400 italic">{item.walls?.length ? `Walls: ${item.walls.map(w => w.width).join('+')} × ${item.height}H` : ''}{item.deductions?.length ? ` | Deductions: -${item.deductions.reduce((acc, d) => acc + (d.area * d.qty), 0)}` : ''}</div>)}</td><td className="py-5 px-4 text-right font-black text-slate-900 text-[12px]">{item.netArea.toFixed(2)}</td><td className="py-5 px-4 text-left font-black text-slate-200 uppercase text-[8px]">{s.unit}</td></tr>))} </React.Fragment>))}</tbody></table></div><div className="mt-12 flex justify-between items-end border-t border-slate-100 pt-8 break-inside-avoid"><div className="text-left w-56"><div className="h-10 border-b-2 border-slate-900"></div><p className="text-[9px] font-black uppercase text-slate-300 text-center mt-2 tracking-widest">Surveyor Authentication</p></div><div className="text-right w-56"><div className="h-10 border-b-2 border-slate-100"></div><p className="text-[9px] font-black uppercase text-slate-300 text-center mt-2 tracking-widest">Client Acknowledgement</p></div></div></div>
     </div>
   );
 }
