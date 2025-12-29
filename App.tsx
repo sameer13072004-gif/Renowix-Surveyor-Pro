@@ -39,7 +39,8 @@ import {
   EyeOff,
   Settings,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  Clock
 } from 'lucide-react';
 import { 
   ActiveService, 
@@ -651,7 +652,7 @@ export default function App() {
       {/* EDIT SERVICE CATEGORY MODAL */}
       {editingServiceInfo && (
         <div className="fixed inset-0 z-[250] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
-          <div className="w-full max-w-sm bg-white rounded-3xl p-6 shadow-2xl border border-slate-100">
+          <div className="w-full max-sm bg-white rounded-3xl p-6 shadow-2xl border border-slate-100">
             <div className="mb-6">
               <h3 className="text-xl font-black text-slate-800 mb-4 flex items-center gap-2"><Settings size={20} className="text-brand-gold" /> Category Info</h3>
               <InputGroup label="Display Name">
@@ -671,6 +672,54 @@ export default function App() {
                 setServices(newServices);
                 setEditingServiceInfo(null);
               }} className="flex-1 py-4 bg-slate-800 text-white rounded-2xl font-black text-xs uppercase tracking-widest">Update</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* REMINDER MODAL */}
+      {reminderModal.show && (
+        <div className="fixed inset-0 z-[250] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm transition-all">
+          <div className="w-full max-w-sm bg-white rounded-3xl p-6 shadow-2xl border border-slate-100 animate-in fade-in zoom-in duration-200">
+            <div className="flex flex-col items-center text-center mb-6">
+              <div className="bg-brand-gold/10 text-brand-gold p-4 rounded-full mb-4 shadow-inner">
+                <Calendar size={32} />
+              </div>
+              <h3 className="text-xl font-black text-slate-800 mb-2">Set Follow-up Reminder</h3>
+              <p className="text-sm font-medium text-slate-500 mb-4">
+                Schedule a follow-up for <span className="text-slate-800 font-bold">{reminderModal.project?.client.name}</span>
+              </p>
+              
+              <div className="w-full text-left space-y-4">
+                <InputGroup label="Select Date & Time" labelSize="text-[10px]">
+                  <div className="relative">
+                    <input 
+                      type="datetime-local" 
+                      className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none font-bold text-slate-800 focus:ring-4 focus:ring-brand-gold/10 transition-all"
+                      value={reminderModal.dueDate}
+                      onChange={e => setReminderModal(prev => ({ ...prev, dueDate: e.target.value }))}
+                    />
+                    <Clock size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                  </div>
+                </InputGroup>
+              </div>
+            </div>
+            
+            <div className="flex gap-2">
+              <button 
+                onClick={() => setReminderModal(prev => ({ ...prev, show: false, project: null }))}
+                className="flex-1 py-4 bg-slate-100 text-slate-600 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-slate-200 transition-all"
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={createCalendarEvent}
+                disabled={reminderModal.isSaving}
+                className="flex-1 py-4 bg-slate-800 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-slate-700 transition-all shadow-lg flex items-center justify-center gap-2"
+              >
+                {reminderModal.isSaving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
+                {reminderModal.isSaving ? 'Saving...' : 'Set Reminder'}
+              </button>
             </div>
           </div>
         </div>
