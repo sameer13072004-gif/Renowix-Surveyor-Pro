@@ -8,12 +8,12 @@ import {
   AlertTriangle, PlusCircle, LogOut, Eye,
   EyeOff, Settings, ChevronDown, ChevronUp, ArrowUpRight,
   LogIn, Mail, Lock, ExternalLink, Download, Users, FileText, LayoutDashboard, UserPlus,
-  PackageSearch, RefreshCw, Layers, X, Clock, Flag, Trophy
+  PackageSearch, RefreshCw, Layers, X, Clock, Flag, Trophy, Camera, CameraOff, Smartphone, RotateCcw
 } from 'lucide-react';
 
 import { 
   ActiveService, ClientDetails, MeasurementItem, PageView, Project, 
-  Wall, CeilingSection, CabinetSection, Deduction, UserProfile, Milestone } from './types';
+  Wall, CeilingSection, CabinetSection, Deduction, UserProfile, Milestone, DailyAttendance } from './types';
 import { SERVICE_DATA, DEFAULT_TERMS } from './constants';
 import { auth, db } from './firebase';
 import { 
@@ -43,6 +43,237 @@ import { generateCSV, downloadCSV } from './csvHelper';
 const LOGO_URL = "https://renowix.in/wp-content/uploads/2025/12/Picsart_25-12-04_19-18-42-905-scaled.png";
 const ADMIN_EMAIL = "info@renowix.in";
 
+/**
+ * Utility: Compress Image to keep Firestore Docs under 1MB
+ */
+async function compressImage(base64Str: string, maxWidth = 1000, quality = 0.6): Promise<string> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.src = base64Str;
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      let width = img.width;
+      let height = img.height;
+
+      if (width > maxWidth) {
+        height = (maxWidth / width) * height;
+        width = maxWidth;
+      }
+
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      ctx?.drawImage(img, 0, 0, width, height);
+      resolve(canvas.toDataURL('image/jpeg', quality));
+    };
+  });
+}
+
+/**
+ * Camera Capture Component
+ */
+function RealTimeCamera({ 
+  onCapture, 
+  onClose, 
+  mode = 'environment' 
+}: { 
+  onCapture: (base64: string) => void, 
+  onClose: () => void,
+  mode?: 'user' | 'environment'
+}) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [stream, setStream] = useState<MediaStream | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [facingMode, setFacingMode] = useState<'user' | 'environment'>(mode);
+
+  const startCamera = async () => {
+    setLoading(true);
+    if (stream) {
+      stream.getTracks().forEach(track => track.stop());
+    }
+    try {
+      const newStream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: facingMode },
+        audio: false
+      });
+      setStream(newStream);
+      if (videoRef.current) {
+        videoRef.current.srcObject = newStream;
+      }
+      setLoading(false);
+    } catch (err) {
+      alert("Camera access denied or unavailable.");
+      onClose();
+    }
+  };
+
+  useEffect(() => {
+    startCamera();
+    return () => {
+      if (stream) stream.getTracks().forEach(t => t.stop());
+    };
+  }, [facingMode]);
+
+  const capture = () => {
+    if (videoRef.current && canvasRef.current) {
+      const video = videoRef.current;
+      const canvas = canvasRef.current;
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
+        onCapture(dataUrl);
+      }
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[1000] bg-black flex flex-col items-center justify-center p-4">
+      <div className="relative w-full max-w-lg aspect-[3/4] bg-slate-900 rounded-3xl overflow-hidden shadow-2xl border border-white/10">
+        {loading && (
+          <div className="absolute inset-0 flex items-center justify-center">
+            <Loader2 className="text-brand-gold animate-spin" size={48} />
+          </div>
+        )}
+        <video 
+          ref={videoRef} 
+          autoPlay 
+          playsInline 
+          className={`w-full h-full object-cover ${facingMode === 'user' ? 'scale-x-[-1]' : ''}`}
+        />
+        <canvas ref={canvasRef} className="hidden" />
+        
+        {/* UI Overlay */}
+        <div className="absolute top-6 left-6 right-6 flex justify-between">
+           <button onClick={onClose} className="p-3 bg-black/40 backdrop-blur-md rounded-2xl text-white border border-white/10"><X size={20} /></button>
+           <button onClick={() => setFacingMode(prev => prev === 'user' ? 'environment' : 'user')} className="p-3 bg-black/40 backdrop-blur-md rounded-2xl text-white border border-white/10"><RotateCcw size={20} /></button>
+        </div>
+
+        <div className="absolute bottom-10 left-0 right-0 flex justify-center">
+           <button 
+             onClick={capture} 
+             disabled={loading}
+             className="w-20 h-20 bg-white rounded-full border-[6px] border-white/20 flex items-center justify-center active:scale-90 transition-transform disabled:opacity-50"
+           >
+             <div className="w-14 h-14 bg-white rounded-full border-2 border-slate-200 shadow-inner" />
+           </button>
+        </div>
+      </div>
+      <p className="mt-8 text-white/50 text-[10px] font-black uppercase tracking-[0.3em]">Live Site Proof Capture</p>
+    </div>
+  );
+}
+
+/**
+ * Detailed Quote Summary View
+ */
+function QuoteView({ client, services, terms, onBack, onDownloadCSV }: { client: ClientDetails, services: ActiveService[], terms: string, onBack: () => void, onDownloadCSV: () => void }) {
+  const total = services.reduce((sum, s) => sum + s.items.reduce((is, i) => is + i.cost, 0), 0);
+  return (
+    <div className="p-6 pb-32 bg-white min-h-screen">
+      <div className="flex justify-between items-start mb-8">
+        <button onClick={onBack} className="p-2 text-slate-400"><ArrowLeft /></button>
+        <div className="text-right">
+          <img src={LOGO_URL} className="h-12 ml-auto mb-2" alt="Logo" />
+          <p className="text-xs text-slate-400 font-bold uppercase">Quotation</p>
+        </div>
+      </div>
+      <div className="mb-8 p-6 bg-slate-50 rounded-3xl border border-slate-100">
+        <h2 className="text-xl font-black text-brand-charcoal mb-4">Client Details</h2>
+        <div className="space-y-2">
+          <p className="text-sm font-bold text-slate-800">{client.name}</p>
+          <p className="text-xs text-slate-500 leading-relaxed">{client.address}</p>
+        </div>
+      </div>
+      <div className="space-y-6 mb-8">
+        {services.map(s => (
+          <div key={s.instanceId} className="border-b border-slate-100 pb-4">
+            <h3 className="font-black text-brand-charcoal text-sm uppercase tracking-widest mb-3">{s.name}</h3>
+            <div className="space-y-2">
+              {s.items.map(i => (
+                <div key={i.id} className="flex justify-between text-xs">
+                  <span className="text-slate-600 font-medium">{i.name} ({i.netArea.toFixed(2)} {s.unit})</span>
+                  <span className="font-black text-brand-charcoal">₹{Math.round(i.cost).toLocaleString()}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="mb-8 p-6 bg-brand-charcoal text-white rounded-3xl shadow-xl flex justify-between items-center">
+        <span className="font-black uppercase tracking-widest text-xs opacity-60">Total Amount</span>
+        <span className="text-2xl font-black text-brand-gold">₹{Math.round(total).toLocaleString()}</span>
+      </div>
+      <div className="mb-20">
+         <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Terms & Conditions</h4>
+         <pre className="text-[10px] text-slate-500 font-medium whitespace-pre-wrap leading-relaxed">{terms}</pre>
+      </div>
+      <Footer>
+        <button onClick={onDownloadCSV} className="w-full h-14 bg-brand-gold text-brand-charcoal rounded-2xl font-black flex items-center justify-center gap-3 shadow-xl">
+          <Download size={20} /> Download CSV Report
+        </button>
+      </Footer>
+    </div>
+  );
+}
+
+/**
+ * Internal Measurement Breakdown Sheet
+ */
+function MeasurementSheetView({ client, services, onBack }: { client: ClientDetails, services: ActiveService[], onBack: () => void }) {
+  return (
+    <div className="p-6 pb-32 bg-slate-50 min-h-screen">
+      <div className="flex items-center gap-4 mb-8">
+        <button onClick={onBack} className="p-3 bg-white rounded-xl shadow-sm border border-slate-200"><ArrowLeft size={18} /></button>
+        <h2 className="text-lg font-black text-brand-charcoal uppercase tracking-tight">Measurement Sheet</h2>
+      </div>
+      <div className="space-y-8">
+        {services.map(s => (
+          <div key={s.instanceId} className="bg-white rounded-3xl p-6 shadow-sm border border-slate-200">
+            <h3 className="font-black text-brand-gold text-xs uppercase tracking-[0.2em] mb-6 border-b border-slate-50 pb-4">{s.name}</h3>
+            <div className="space-y-6">
+              {s.items.map(i => (
+                <div key={i.id} className="space-y-3">
+                  <div className="flex justify-between items-start">
+                    <span className="font-bold text-slate-800 text-sm">{i.name}</span>
+                    <span className="bg-slate-100 px-2 py-1 rounded text-[10px] font-black text-slate-500 uppercase">{i.netArea.toFixed(2)} {s.unit}</span>
+                  </div>
+                  {i.walls && i.walls.length > 0 && (
+                    <div className="pl-4 border-l-2 border-slate-100 space-y-1">
+                      <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Wall Layout (Height: {i.height}ft)</p>
+                      <div className="flex flex-wrap gap-2">
+                        {i.walls.map((w, idx) => (
+                          <span key={w.id} className="text-[10px] font-bold text-slate-600 bg-slate-50 px-2 py-1 rounded border border-slate-100">W{idx+1}: {w.width}ft</span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {i.cabinetSections && i.cabinetSections.length > 0 && (
+                    <div className="pl-4 border-l-2 border-slate-100 space-y-1">
+                      <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Components</p>
+                      <div className="space-y-1">
+                        {i.cabinetSections.map((sec) => (
+                          <div key={sec.id} className="text-[10px] font-bold text-slate-600 flex justify-between">
+                            <span>{sec.name}: {sec.l} x {sec.b} ft</span>
+                            <span className="text-slate-400">Qty: {sec.q}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   const [user, setUser] = useState<FirebaseUser | null>(null);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
@@ -59,6 +290,7 @@ export default function App() {
   const [allProjects, setAllProjects] = useState<Project[]>([]); 
   const [allSupervisors, setAllSupervisors] = useState<UserProfile[]>([]);
   const [currentProject, setCurrentProject] = useState<Project | null>(null);
+  const [todayAttendance, setTodayAttendance] = useState<DailyAttendance | null>(null);
   
   const [adminSyncError, setAdminSyncError] = useState<string | null>(null);
   const adminRetryRef = useRef<number>(0);
@@ -72,6 +304,7 @@ export default function App() {
   const [isEstimateHidden, setIsEstimateHidden] = useState(false);
   const [expandedServices, setExpandedServices] = useState<Record<string, boolean>>({});
   const [saveModal, setSaveModal] = useState<{ show: boolean }>({ show: false });
+  const [cameraConfig, setCameraConfig] = useState<{ show: boolean, type: 'labor' | 'selfie' } | null>(null);
   
   // Custom Confirmation Modal State
   const [confirmState, setConfirmState] = useState<{
@@ -86,6 +319,12 @@ export default function App() {
     message: '',
     onConfirm: () => {},
   });
+
+  // Get date ID (YYYY-MM-DD)
+  const getTodayId = () => {
+    const d = new Date();
+    return d.toISOString().split('T')[0];
+  };
 
   // Handle Auth State
   useEffect(() => {
@@ -156,29 +395,25 @@ export default function App() {
     setAdminSyncError(null);
     setCurrentProjectId(null);
     setCurrentProject(null);
+    setTodayAttendance(null);
     setIsDirty(false);
     adminRetryRef.current = 0;
   };
 
   /**
-   * CRITICAL FIX: Dedicated single-document listener.
-   * This is the ONLY place that should update currentProject once a project is loaded.
-   * This prevents collection-wide listeners from reverting state.
+   * Dedicated single-document listener for current project
    */
   useEffect(() => {
     if (!currentProjectId) {
       setCurrentProject(null);
+      setTodayAttendance(null);
       return;
     }
 
     const unsub = onSnapshot(doc(db, 'projects', currentProjectId), (docSnap) => {
       if (docSnap.exists()) {
         const data = { ...docSnap.data(), id: docSnap.id } as Project;
-        
-        // Update currentProject state for the dashboard
         setCurrentProject(data);
-        
-        // If the project is locked (status: project), sync main editor states with DB
         if (data.status === 'project') {
           setClient(data.client);
           setServices(data.services);
@@ -187,10 +422,24 @@ export default function App() {
         }
       }
     }, (err) => {
-      console.error("Single project sync error:", err);
+      console.warn("Project Listener Permission Denied:", err);
     });
 
-    return unsub;
+    const todayId = getTodayId();
+    const unsubAttendance = onSnapshot(doc(db, 'projects', currentProjectId, 'attendance', todayId), (docSnap) => {
+      if (docSnap.exists()) {
+        setTodayAttendance({ ...docSnap.data(), id: docSnap.id } as DailyAttendance);
+      } else {
+        setTodayAttendance(null);
+      }
+    }, (err) => {
+      console.warn("Attendance Listener Permission Denied:", err);
+    });
+
+    return () => {
+      unsub();
+      unsubAttendance();
+    };
   }, [currentProjectId]);
 
   // Listener for "My Quotes" (History)
@@ -310,7 +559,7 @@ export default function App() {
     setServices(p.services); 
     setTerms(p.terms || DEFAULT_TERMS);
     setCurrentProjectStatus(p.status || 'quotation');
-    setCurrentProjectId(p.id); // This triggers the single-doc listener above
+    setCurrentProjectId(p.id); 
     setIsDirty(false); 
     setView('dashboard');
   };
@@ -326,6 +575,63 @@ export default function App() {
         setConfirmState(prev => ({ ...prev, show: false }));
       }
     });
+  };
+
+  /**
+   * Attendance Actions
+   */
+  const handleCheckIn = async () => {
+    if (!currentProjectId || !user) return;
+    const todayId = getTodayId();
+    try {
+      await setDoc(doc(db, 'projects', currentProjectId, 'attendance', todayId), {
+        checkIn: serverTimestamp(),
+        supervisorId: user.uid,
+        supervisorName: surveyorName || 'Supervisor',
+        id: todayId
+      });
+    } catch (e: any) { 
+      alert("Error checking in: " + e.message + ". Check Firestore rules for sub-collections.");
+    }
+  };
+
+  const handleCheckOut = async () => {
+    if (!currentProjectId) return;
+    const todayId = getTodayId();
+    try {
+      await updateDoc(doc(db, 'projects', currentProjectId, 'attendance', todayId), {
+        checkOut: serverTimestamp()
+      });
+    } catch (e: any) { alert("Error checking out: " + e.message); }
+  };
+
+  const handlePhotoCapture = async (base64: string) => {
+    if (!currentProjectId || !cameraConfig || !user) return;
+    const todayId = getTodayId();
+    const type = cameraConfig.type;
+    setCameraConfig(null);
+    setConfirmState({
+      show: true,
+      title: 'Optimizing & Saving',
+      message: 'Processing site proof. No payment or extra storage needed...',
+      onConfirm: () => {},
+      type: 'info'
+    });
+
+    try {
+      // 1. Compress image client-side to keep document size light
+      const compressed = await compressImage(base64, 1000, 0.6);
+
+      // 2. Save directly to Firestore Attendance document (Base64)
+      await updateDoc(doc(db, 'projects', currentProjectId, 'attendance', todayId), {
+        [type === 'labor' ? 'laborPhoto' : 'selfiePhoto']: compressed
+      });
+      
+      setConfirmState(prev => ({ ...prev, show: false }));
+    } catch (e: any) {
+      alert("Photo save failed: " + e.message);
+      setConfirmState(prev => ({ ...prev, show: false }));
+    }
   };
 
   const handleAddService = (catId: string, typeId: string, customName?: string, customDesc?: string) => {
@@ -388,7 +694,6 @@ export default function App() {
 
   const toggleMilestone = async (milestoneId: string) => {
     if (!currentProject) return;
-    
     const updatedMilestones = currentProject.milestones?.map(m => {
       if (m.id === milestoneId) {
         const newStatus = m.status === 'completed' ? 'pending' : 'completed';
@@ -400,20 +705,12 @@ export default function App() {
       }
       return m;
     }) || [];
-
-    /**
-     * NOTE: We do NOT set local state manually here anymore. 
-     * Firestore's single-doc listener (Latency Compensation) will update the 
-     * UI immediately once updateDoc is called.
-     */
     try {
       await updateDoc(doc(db, 'projects', currentProject.id), { 
         milestones: updatedMilestones,
         updatedAt: serverTimestamp() 
       });
-    } catch (e: any) { 
-      alert("Execution error: " + e.message); 
-    }
+    } catch (e: any) { alert("Execution error: " + e.message); }
   };
 
   const handleDownloadCSV = () => {
@@ -602,6 +899,65 @@ export default function App() {
               
               <Header title={currentProjectStatus === 'project' ? "Project Specs" : "Service Items"} onBack={() => handleBackNavigation('welcome')} />
               
+              {/* Site Attendance Card */}
+              {currentProjectStatus === 'project' && (
+                <div className="mb-8 bg-white border border-cardBorder rounded-3xl p-6 shadow-sm border-t-[6px] border-t-brand-gold">
+                   <div className="flex items-center justify-between mb-6">
+                      <div>
+                        <h4 className="text-sm font-black text-brand-charcoal uppercase tracking-widest">Site Attendance</h4>
+                        <p className="text-[10px] font-bold text-slate-400 mt-0.5">{getTodayId()}</p>
+                      </div>
+                      <div className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-wider ${todayAttendance?.checkOut ? 'bg-green-100 text-green-700' : (todayAttendance ? 'bg-brand-gold/10 text-brand-gold' : 'bg-slate-100 text-slate-500')}`}>
+                        {todayAttendance?.checkOut ? 'Completed' : (todayAttendance ? 'Checked In' : 'Not Started')}
+                      </div>
+                   </div>
+
+                   <div className="space-y-4">
+                      {!todayAttendance ? (
+                        <button 
+                          onClick={handleCheckIn}
+                          className="w-full h-16 bg-brand-charcoal text-white rounded-2xl font-black text-sm uppercase tracking-widest flex items-center justify-center gap-3 shadow-lg active:scale-[0.98] transition-all"
+                        >
+                          <Smartphone size={20} className="text-brand-gold" /> Check In Now
+                        </button>
+                      ) : !todayAttendance.checkOut ? (
+                        <div className="space-y-4">
+                           <div className="grid grid-cols-2 gap-3">
+                              <button 
+                                onClick={() => setCameraConfig({ show: true, type: 'labor' })}
+                                className={`flex flex-col items-center justify-center gap-2 p-4 rounded-2xl border-2 transition-all ${todayAttendance.laborPhoto ? 'border-green-500 bg-green-50' : 'border-slate-100 bg-slate-50 hover:border-brand-gold'}`}
+                              >
+                                {todayAttendance.laborPhoto ? <CheckCircle className="text-green-500" size={24} /> : <Camera size={24} className="text-slate-400" />}
+                                <span className="text-[10px] font-black uppercase text-slate-600">Labor Proof</span>
+                              </button>
+                              <button 
+                                onClick={() => setCameraConfig({ show: true, type: 'selfie' })}
+                                className={`flex flex-col items-center justify-center gap-2 p-4 rounded-2xl border-2 transition-all ${todayAttendance.selfiePhoto ? 'border-green-500 bg-green-50' : 'border-slate-100 bg-slate-50 hover:border-brand-gold'}`}
+                              >
+                                {todayAttendance.selfiePhoto ? <CheckCircle className="text-green-500" size={24} /> : <User size={24} className="text-slate-400" />}
+                                <span className="text-[10px] font-black uppercase text-slate-600">My Selfie</span>
+                              </button>
+                           </div>
+                           <button 
+                            onClick={handleCheckOut}
+                            className="w-full h-14 bg-brand-gold text-brand-charcoal rounded-2xl font-black text-xs uppercase tracking-widest flex items-center justify-center gap-3 active:scale-[0.98] transition-all"
+                           >
+                             <LogOut size={18} /> Final Check Out
+                           </button>
+                        </div>
+                      ) : (
+                        <div className="p-4 bg-green-50 rounded-2xl border border-green-100 flex items-center gap-4">
+                           <div className="w-12 h-12 bg-green-500 rounded-xl flex items-center justify-center text-white"><CheckCircle size={24} /></div>
+                           <div>
+                             <p className="text-xs font-black text-green-700 uppercase tracking-widest">Day Finalized</p>
+                             <p className="text-[10px] font-bold text-green-600/60 mt-0.5">Checked out at {new Date(todayAttendance.checkOut?.seconds * 1000).toLocaleTimeString()}</p>
+                           </div>
+                        </div>
+                      )}
+                   </div>
+                </div>
+              )}
+
               {currentProjectStatus === 'project' && currentProject?.milestones && (
                 <div className="mb-8 bg-white border border-cardBorder rounded-3xl p-6 shadow-sm">
                   <div className="flex items-center justify-between mb-6">
@@ -698,21 +1054,31 @@ export default function App() {
         </div>
       </div>
 
+      {cameraConfig?.show && (
+        <RealTimeCamera 
+          mode={cameraConfig.type === 'selfie' ? 'user' : 'environment'}
+          onCapture={handlePhotoCapture} 
+          onClose={() => setCameraConfig(null)} 
+        />
+      )}
+
       {/* CUSTOM CONFIRM MODAL */}
       {confirmState.show && (
         <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="w-full max-sm bg-white rounded-3xl p-6 shadow-2xl border border-slate-200 animate-in zoom-in-95 duration-200">
             <div className="flex items-center gap-3 mb-4">
               <div className={`p-2 rounded-xl ${confirmState.type === 'danger' ? 'bg-red-50 text-brand-red' : 'bg-blue-50 text-brand-blue'}`}>
-                {confirmState.type === 'danger' ? <AlertTriangle size={24} /> : <CheckCircle size={24} />}
+                {confirmState.type === 'danger' ? <AlertTriangle size={24} /> : (confirmState.title === 'Optimizing & Saving' ? <Loader2 size={24} className="animate-spin" /> : <CheckCircle size={24} />)}
               </div>
               <h3 className="text-xl font-black text-brand-charcoal">{confirmState.title}</h3>
             </div>
             <p className="text-slate-500 text-sm mb-8 font-medium leading-relaxed">{confirmState.message}</p>
-            <div className="flex gap-3">
-              <button type="button" onClick={() => setConfirmState(prev => ({ ...prev, show: false }))} className="flex-1 py-4 bg-slate-100 text-slate-600 rounded-2xl font-black text-xs uppercase tracking-widest active:scale-95 transition-all">Cancel</button>
-              <button type="button" onClick={confirmState.onConfirm} className={`flex-1 py-4 text-white rounded-2xl font-black text-xs uppercase tracking-widest active:scale-95 transition-all ${confirmState.type === 'danger' ? 'bg-brand-red shadow-lg shadow-red-200' : 'bg-brand-charcoal shadow-lg shadow-slate-200'}`}>Confirm</button>
-            </div>
+            {confirmState.title !== 'Optimizing & Saving' && (
+              <div className="flex gap-3">
+                <button type="button" onClick={() => setConfirmState(prev => ({ ...prev, show: false }))} className="flex-1 py-4 bg-slate-100 text-slate-600 rounded-2xl font-black text-xs uppercase tracking-widest active:scale-95 transition-all">Cancel</button>
+                <button type="button" onClick={confirmState.onConfirm} className={`flex-1 py-4 text-white rounded-2xl font-black text-xs uppercase tracking-widest active:scale-95 transition-all ${confirmState.type === 'danger' ? 'bg-brand-red shadow-lg shadow-red-200' : 'bg-brand-charcoal shadow-lg shadow-slate-200'}`}>Confirm</button>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -721,9 +1087,10 @@ export default function App() {
 }
 
 function AdminDashboard({ projects, supervisors, syncError, onSignOut, onAssign, onReview, onRetrySync, onDeleteProject }: { projects: Project[], supervisors: UserProfile[], syncError: string|null, onSignOut: () => void, onAssign: (pid: string, sid: string, milestones: Milestone[]) => void, onReview: (p: Project) => void, onRetrySync: () => void, onDeleteProject: (id: string) => void }) {
-  const [activeTab, setActiveTab] = useState<'quotes' | 'supervisors'>('quotes');
+  const [activeTab, setActiveTab] = useState<'quotes' | 'supervisors' | 'attendance'>('quotes');
   const [assignModal, setAssignModal] = useState<Project | null>(null);
   const [selectedSup, setSelectedSup] = useState<UserProfile | null>(null);
+  const [attendanceLogs, setAttendanceLogs] = useState<Record<string, DailyAttendance[]>>({});
   const [milestones, setMilestones] = useState<Milestone[]>([
     { id: '1', name: 'Site Mobilization', status: 'pending' },
     { id: '2', name: 'Civil & Structural Work', status: 'pending' },
@@ -735,6 +1102,22 @@ function AdminDashboard({ projects, supervisors, syncError, onSignOut, onAssign,
 
   const pendingQuotes = projects.filter(p => p.status === 'quotation' || !p.status);
   const activeProjects = projects.filter(p => p.status === 'project');
+
+  useEffect(() => {
+    if (activeTab === 'attendance') {
+      activeProjects.forEach(async p => {
+        try {
+          const attCol = collection(db, 'projects', p.id, 'attendance');
+          const q = query(attCol, orderBy('checkIn', 'desc'));
+          const snap = await getDocs(q);
+          const logs = snap.docs.map(doc => ({ ...doc.data(), id: doc.id } as DailyAttendance));
+          setAttendanceLogs(prev => ({ ...prev, [p.id]: logs }));
+        } catch (e) {
+          console.warn(`Could not fetch attendance for project ${p.id}:`, e);
+        }
+      });
+    }
+  }, [activeTab, activeProjects]);
 
   const addMilestone = () => {
     if (!newMilestoneName.trim()) return;
@@ -766,11 +1149,14 @@ function AdminDashboard({ projects, supervisors, syncError, onSignOut, onAssign,
           </div>
         )}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-6 mb-8 sm:mb-10"><StatCard icon={<FileText />} label="Quotations" value={pendingQuotes.length} color="bg-blue-500" /><StatCard icon={<CheckCircle />} label="Active Tasks" value={activeProjects.length} color="bg-brand-gold" /><StatCard icon={<Users />} label="Supervisors" value={supervisors.length} color="bg-slate-700" /></div>
-        <div className="flex gap-2 sm:gap-4 mb-8">
-          <button onClick={() => setActiveTab('quotes')} className={`flex-1 sm:flex-none px-4 sm:px-6 py-3 rounded-xl font-black text-[10px] sm:text-sm uppercase tracking-widest flex items-center justify-center gap-2 transition-all ${activeTab === 'quotes' ? 'bg-brand-charcoal text-white shadow-lg' : 'bg-white text-slate-400 hover:text-slate-600 border border-slate-200'}`}><LayoutDashboard size={18} /> Inbox</button>
-          <button onClick={() => setActiveTab('supervisors')} className={`flex-1 sm:flex-none px-4 sm:px-6 py-3 rounded-xl font-black text-[10px] sm:text-sm uppercase tracking-widest flex items-center justify-center gap-2 transition-all ${activeTab === 'supervisors' ? 'bg-brand-charcoal text-white shadow-lg' : 'bg-white text-slate-400 hover:text-slate-600 border border-slate-200'}`}><Users size={18} /> Team</button>
+        
+        <div className="flex overflow-x-auto no-scrollbar gap-2 sm:gap-4 mb-8">
+          <button onClick={() => setActiveTab('quotes')} className={`flex-none px-6 py-3 rounded-xl font-black text-xs uppercase tracking-widest flex items-center gap-2 transition-all ${activeTab === 'quotes' ? 'bg-brand-charcoal text-white shadow-lg' : 'bg-white text-slate-400 border border-slate-200'}`}><LayoutDashboard size={16} /> Inbox</button>
+          <button onClick={() => setActiveTab('attendance')} className={`flex-none px-6 py-3 rounded-xl font-black text-xs uppercase tracking-widest flex items-center gap-2 transition-all ${activeTab === 'attendance' ? 'bg-brand-charcoal text-white shadow-lg' : 'bg-white text-slate-400 border border-slate-200'}`}><Clock size={16} /> Attendance</button>
+          <button onClick={() => setActiveTab('supervisors')} className={`flex-none px-6 py-3 rounded-xl font-black text-xs uppercase tracking-widest flex items-center gap-2 transition-all ${activeTab === 'supervisors' ? 'bg-brand-charcoal text-white shadow-lg' : 'bg-white text-slate-400 border border-slate-200'}`}><Users size={16} /> Team</button>
         </div>
-        {activeTab === 'quotes' ? (
+
+        {activeTab === 'quotes' && (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {projects.map((p) => (
               <div key={p.id} className="bg-white p-5 rounded-3xl shadow-sm border border-slate-200 flex flex-col justify-between hover:shadow-md transition-shadow relative">
@@ -804,7 +1190,78 @@ function AdminDashboard({ projects, supervisors, syncError, onSignOut, onAssign,
               </div>
             ))}
           </div>
-        ) : (
+        )}
+
+        {activeTab === 'attendance' && (
+          <div className="space-y-6">
+            {activeProjects.map(p => (
+              <div key={p.id} className="bg-white rounded-[2rem] border border-slate-200 overflow-hidden shadow-sm">
+                <div className="p-6 bg-slate-50 border-b border-slate-200 flex justify-between items-center">
+                  <div>
+                    <h3 className="font-black text-lg text-brand-charcoal leading-none">{p.client.name}</h3>
+                    <p className="text-[10px] font-black uppercase text-slate-400 mt-1.5 tracking-widest">Attendance Logs</p>
+                  </div>
+                  <div className="bg-brand-gold text-brand-charcoal px-4 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest shadow-sm">Active Project</div>
+                </div>
+                <div className="p-6">
+                   {!attendanceLogs[p.id] || attendanceLogs[p.id]?.length === 0 ? (
+                     <p className="text-center py-8 text-slate-400 text-xs font-bold uppercase tracking-widest">No logs yet for this site</p>
+                   ) : (
+                     <div className="overflow-x-auto">
+                        <table className="w-full text-left">
+                           <thead>
+                              <tr className="border-b border-slate-100">
+                                 <th className="py-4 text-[10px] font-black uppercase text-slate-400 tracking-widest">Date</th>
+                                 <th className="py-4 text-[10px] font-black uppercase text-slate-400 tracking-widest">Check In</th>
+                                 <th className="py-4 text-[10px] font-black uppercase text-slate-400 tracking-widest">Check Out</th>
+                                 <th className="py-4 text-[10px] font-black uppercase text-slate-400 tracking-widest">Visual Proof</th>
+                              </tr>
+                           </thead>
+                           <tbody className="divide-y divide-slate-50">
+                              {attendanceLogs[p.id]?.map(log => (
+                                <tr key={log.id} className="group">
+                                   <td className="py-4">
+                                      <p className="font-bold text-slate-800 text-sm">{log.id}</p>
+                                   </td>
+                                   <td className="py-4">
+                                      <p className="font-black text-brand-charcoal text-xs">{log.checkIn ? new Date(log.checkIn.seconds * 1000).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : '-'}</p>
+                                   </td>
+                                   <td className="py-4">
+                                      <p className="font-black text-brand-charcoal text-xs">{log.checkOut ? new Date(log.checkOut.seconds * 1000).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : 'Active'}</p>
+                                   </td>
+                                   <td className="py-4">
+                                      <div className="flex gap-2">
+                                        {log.laborPhoto ? (
+                                          <div className="w-10 h-10 rounded-lg bg-slate-100 overflow-hidden border border-slate-200">
+                                             <img src={log.laborPhoto} className="w-full h-full object-cover" alt="labor" onClick={() => {
+                                                const win = window.open();
+                                                win?.document.write(`<img src="${log.laborPhoto}" style="max-width:100%">`);
+                                             }} />
+                                          </div>
+                                        ) : <div className="w-10 h-10 rounded-lg bg-slate-50 border border-dashed border-slate-200" />}
+                                        {log.selfiePhoto ? (
+                                          <div className="w-10 h-10 rounded-lg bg-slate-100 overflow-hidden border border-slate-200">
+                                             <img src={log.selfiePhoto} className="w-full h-full object-cover" alt="selfie" onClick={() => {
+                                                const win = window.open();
+                                                win?.document.write(`<img src="${log.selfiePhoto}" style="max-width:100%">`);
+                                             }} />
+                                          </div>
+                                        ) : <div className="w-10 h-10 rounded-lg bg-slate-50 border border-dashed border-slate-200" />}
+                                      </div>
+                                   </td>
+                                </tr>
+                              ))}
+                           </tbody>
+                        </table>
+                     </div>
+                   )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {activeTab === 'supervisors' && (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
             {supervisors.map((s) => (
               <div key={s.uid} className="bg-white p-6 rounded-3xl shadow-prof border border-slate-200">
@@ -968,6 +1425,9 @@ function InputGroup({ label, children }: { label: string, children?: React.React
   return (<div className="space-y-1.5"><label className="text-[14px] font-bold text-slate-400 uppercase tracking-widest ml-1">{label}</label>{children}</div>);
 }
 
+/**
+ * Service Selector Component
+ */
 function ServiceSelector({ onBack, onSelect }: { onBack: () => void, onSelect: (c:string, t:string, customN?:string, customD?:string) => void }) {
   const [cat, setCat] = useState(''); const [type, setType] = useState('');
   const [customName, setCustomName] = useState(''); const [description, setDescription] = useState('');
@@ -983,15 +1443,90 @@ function ServiceSelector({ onBack, onSelect }: { onBack: () => void, onSelect: (
     } catch (e) { alert("AI error."); } finally { setIsAiLoading(false); }
   };
   return (
-    <div className="p-6 pb-32 bg-appBg"><Header title="Add Service" onBack={onBack} />
-      {!cat ? (<div className="grid grid-cols-2 gap-4 mt-6">{Object.values(SERVICE_DATA).map(c => (<button key={c.id} onClick={() => setCat(c.id)} className="bg-white p-6 rounded-3xl shadow-prof border border-cardBorder flex flex-col items-center gap-3 active:scale-95 transition-all text-center"><div className="w-12 h-12 rounded-2xl bg-slate-50 text-brand-gold flex items-center justify-center border border-slate-100 shadow-sm"><ServiceIcon categoryId={c.id} typeId="" /></div><span className="font-black text-[12px] uppercase tracking-wider text-brand-charcoal">{c.name}</span></button>))}</div>) : 
-      (<div className="space-y-6 mt-4"><div className="flex items-center gap-2 p-3 bg-slate-100 rounded-xl border border-slate-200 shadow-inner"><button onClick={() => setCat('')} className="p-2 text-slate-400 bg-white rounded-lg shadow-sm"><ArrowLeft size={14} /></button><span className="font-black uppercase text-[10px] text-slate-600 tracking-[0.15em] ml-2">{SERVICE_DATA[cat]?.name}</span></div>
-          <div className="space-y-3">{cat === 'custom' ? (<div className="bg-cardBg p-5 rounded-2xl border border-cardBorder shadow-prof"><InputGroup label="Custom Name"><input type="text" className="w-full h-12 px-4 border rounded-xl font-bold bg-slate-50 focus:bg-white focus:border-brand-gold transition-all" value={customName} onChange={e => setCustomName(e.target.value)} placeholder="Service Name" /></InputGroup></div>) : 
-                (<div className="grid grid-cols-1 gap-3">{SERVICE_DATA[cat].items.map(i => (<button key={i.id} onClick={() => setType(i.id)} className={`p-4 rounded-2xl border text-left transition-all ${type === i.id ? 'bg-brand-gold/10 border-brand-gold ring-1 ring-brand-gold shadow-md' : 'bg-white border-cardBorder'}`}><h4 className="font-black text-brand-charcoal text-[13px] uppercase tracking-tight">{i.name}</h4><p className="text-[10px] text-slate-400 mt-1.5 font-bold uppercase tracking-widest">Base Rate: ₹{i.rate}</p></button>))}</div>)}
+    <div className="p-6 pb-32 bg-appBg">
+      <Header title="Add Service" onBack={onBack} />
+      {!cat ? (
+        <div className="grid grid-cols-2 gap-4 mt-6">
+          {Object.values(SERVICE_DATA).map(c => (
+            <button key={c.id} onClick={() => setCat(c.id)} className="bg-white p-6 rounded-3xl shadow-prof border border-cardBorder flex flex-col items-center gap-3 active:scale-95 transition-all text-center">
+              <div className="w-12 h-12 rounded-2xl bg-slate-50 text-brand-gold flex items-center justify-center border border-slate-100 shadow-sm">
+                <ServiceIcon categoryId={c.id} typeId="" />
+              </div>
+              <span className="font-black text-[12px] uppercase tracking-wider text-brand-charcoal">{c.name}</span>
+            </button>
+          ))}
+        </div>
+      ) : (
+        <div className="space-y-6 mt-4">
+          <div className="flex items-center gap-2 p-3 bg-slate-100 rounded-xl border border-slate-200 shadow-inner">
+            <button onClick={() => setCat('')} className="p-2 text-slate-400 bg-white rounded-lg shadow-sm">
+              <ArrowLeft size={14} />
+            </button>
+            <span className="font-black uppercase text-[10px] text-slate-600 tracking-[0.15em] ml-2">{SERVICE_DATA[cat]?.name}</span>
           </div>
-          {(type || cat === 'custom') && (<div className="bg-slate-50 p-5 rounded-2xl border border-cardBorder shadow-inner animate-in fade-in slide-in-from-bottom-2"><InputGroup label="Service Description"><textarea rows={5} className="w-full p-4 bg-white border border-inputBorder rounded-xl outline-none text-xs leading-relaxed focus:border-brand-gold" value={description} onChange={e => setDescription(e.target.value)} /><button type="button" onClick={handleAiRewrite} disabled={isAiLoading} className="mt-3 w-full h-12 bg-brand-charcoal text-white rounded-xl text-[11px] font-black uppercase flex items-center justify-center gap-2 shadow-xl hover:bg-slate-800 transition-all">{isAiLoading ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} className="text-brand-gold" />} AI Optimize</button></InputGroup></div>)}
-        </div>)}
-      <Footer><button type="button" onClick={() => onSelect(cat, type, customName, description)} disabled={!cat || (!type && cat !== 'custom')} className="w-full h-14 bg-brand-charcoal text-white rounded-xl font-black shadow-2xl active:scale-95 transition-all">Continue to Measures</button></Footer>
+          
+          <div className="space-y-3">
+            {cat === 'custom' ? (
+              <div className="bg-cardBg p-5 rounded-2xl border border-cardBorder shadow-prof">
+                <InputGroup label="Custom Name">
+                  <input 
+                    type="text" 
+                    className="w-full h-12 px-4 border rounded-xl font-bold bg-slate-50 focus:bg-white focus:border-brand-gold transition-all" 
+                    value={customName} 
+                    onChange={e => setCustomName(e.target.value)} 
+                    placeholder="Service Name" 
+                  />
+                </InputGroup>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 gap-3">
+                {SERVICE_DATA[cat].items.map(i => (
+                  <button 
+                    key={i.id} 
+                    onClick={() => setType(i.id)} 
+                    className={`p-4 rounded-2xl border text-left transition-all ${type === i.id ? 'bg-brand-gold/10 border-brand-gold ring-1 ring-brand-gold shadow-md' : 'bg-white border-cardBorder'}`}
+                  >
+                    <h4 className="font-black text-brand-charcoal text-[13px] uppercase tracking-tight">{i.name}</h4>
+                    <p className="text-[10px] text-slate-400 mt-1.5 font-bold uppercase tracking-widest">Base Rate: ₹{i.rate}</p>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {(type || cat === 'custom') && (
+            <div className="bg-slate-50 p-5 rounded-2xl border border-cardBorder shadow-inner animate-in fade-in slide-in-from-bottom-2">
+              <InputGroup label="Service Description">
+                <textarea 
+                  rows={5} 
+                  className="w-full p-4 bg-white border border-inputBorder rounded-xl outline-none text-xs leading-relaxed focus:border-brand-gold" 
+                  value={description} 
+                  onChange={e => setDescription(e.target.value)} 
+                />
+                <button 
+                  type="button" 
+                  onClick={handleAiRewrite} 
+                  disabled={isAiLoading} 
+                  className="mt-3 w-full h-12 bg-brand-charcoal text-white rounded-xl text-[11px] font-black uppercase flex items-center justify-center gap-2 shadow-xl hover:bg-slate-800 transition-all"
+                >
+                  {isAiLoading ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} className="text-brand-gold" />} 
+                  AI Optimize
+                </button>
+              </InputGroup>
+            </div>
+          )}
+        </div>
+      )}
+      <Footer>
+        <button 
+          type="button" 
+          onClick={() => onSelect(cat, type, customName, description)} 
+          disabled={!cat || (!type && cat !== 'custom')} 
+          className="w-full h-14 bg-brand-charcoal text-white rounded-xl font-black shadow-2xl active:scale-95 transition-all"
+        >
+          Continue to Measures
+        </button>
+      </Footer>
     </div>
   );
 }
@@ -1009,7 +1544,7 @@ function MeasurementForm({ serviceContext, editingItem, onBack, onSave }: { serv
   const [cabinetSections, setCabinetSections] = useState<CabinetSection[]>(editingItem?.cabinetSections || []);
   const [height, setHeight] = useState<number>(editingItem?.height || 9);
   const isWoodwork = serviceContext.categoryId === 'woodwork' || serviceContext.isCustom || serviceContext.isKitchen;
-  useEffect(() => { if (!editingItem) { if (serviceContext.categoryId === 'painting' && walls.length === 0) setWalls([1,2,3,4].map(id => ({id: id.toString(), width: 0}))); if (isWoodwork && cabinetSections.length === 0) setCabinetSections([{ id: Date.now().toString(), name: 'Section 1', l: 0, b: 0, q: 1 }]); } }, []);
+  useEffect(() => { if (!editingItem) { if (serviceContext.categoryId === 'painting' && walls.length === 0) setWalls([1,2,3,4].map(id => ({id: id.toString(), width: 0}))); if (isWoodwork && cabinetSections.length === 0) setCabinetSections([{ id: Date.now().toString(), name: 'Section 1', l: 0, b: 0, q: 1 }]); } }, [editingItem, serviceContext.categoryId, isWoodwork, walls.length, cabinetSections.length]);
   const calculateTotal = (): number => {
     if (isWoodwork) return cabinetSections.reduce((acc, s) => acc + ((s.l || 0) * (s.b || 0) * (s.q || 1)), 0);
     if (serviceContext.categoryId === 'painting') return (walls.reduce((s, w) => s + (w.width || 0), 0) * height);
@@ -1022,21 +1557,5 @@ function MeasurementForm({ serviceContext, editingItem, onBack, onSave }: { serv
               <button type="button" onClick={() => setCabinetSections([...cabinetSections, { id: Date.now().toString(), name: `Component ${cabinetSections.length + 1}`, l: 0, b: 0, q: 1 }])} className="w-full h-12 border-2 border-dashed border-slate-200 rounded-2xl text-[10px] font-black uppercase tracking-widest text-slate-400 hover:border-brand-gold hover:text-brand-gold transition-all">+ Add Component</button></div>) : 
             (<div className="space-y-6"><div className="bg-cardBg p-5 rounded-2xl shadow-prof border border-cardBorder"><span className="text-[11px] font-black text-slate-400 uppercase tracking-widest mb-5 block">Wall Width Measurements</span><div className="space-y-4">{walls.map((w, idx) => (<SliderInput key={w.id} label={`Wall ${idx+1}`} value={w.width} min={0} max={30} onChange={(v) => { const nw = [...walls]; nw[idx].width = v; setWalls(nw); }} />))}<button type="button" onClick={() => setWalls([...walls, { id: Date.now().toString(), width: 0 }])} className="w-full h-10 border-2 border-dashed border-slate-200 rounded-xl text-[10px] font-black uppercase text-slate-300 hover:border-brand-gold hover:text-brand-gold transition-all">+ Add Wall</button></div></div></div>)}
         </div></div><div className="fixed bottom-0 left-0 right-0 z-[110] w-full flex justify-center p-4 safe-bottom"><div className="w-full max-w-xl flex flex-col gap-2"><div className="flex justify-between items-center bg-brand-charcoal text-white py-4 px-6 rounded-2xl shadow-2xl border border-white/5"><div><p className="text-[9px] opacity-50 uppercase tracking-[0.2em]">FINAL QTY</p><p className="font-extrabold text-brand-gold text-lg">{netArea.toFixed(2)} {serviceContext.unit}</p></div><div className="text-right"><p className="text-[9px] opacity-50 uppercase tracking-[0.2em]">ITEM TOTAL</p><p className="font-extrabold text-brand-gold text-lg">₹{Math.round(cost).toLocaleString()}</p></div></div><button type="button" onClick={() => onSave({ id: editingItem?.id || Date.now().toString(), name: name || "Room", netArea, rate, cost, height, walls, cabinetSections })} className="w-full h-14 bg-brand-charcoal text-white rounded-2xl font-black flex items-center justify-center gap-3 shadow-xl active:scale-95 transition-all"><CheckCircle size={22} className="text-brand-gold" /> Save Item</button></div></div></div>
-  );
-}
-
-function QuoteView({ client, services, terms, onBack, onDownloadCSV }: { client: ClientDetails, services: ActiveService[], terms: string, onBack: () => void, onDownloadCSV: () => void }) {
-  const subTotal = services.reduce((s, ser) => s + ser.items.reduce((is, i) => is + i.cost, 0), 0); const dateStr = new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric' });
-  return (
-    <div className="bg-white min-h-screen flex flex-col items-center overflow-y-auto no-scrollbar"><div className="w-full max-w-[210mm] mt-6 mb-4 flex justify-between no-print px-4"><button type="button" onClick={onBack} className="bg-white px-5 py-3 rounded-xl border border-cardBorder text-xs font-black uppercase flex items-center gap-2 shadow-sm"><ArrowLeft size={16} /> Back</button><div className="flex gap-2"><button type="button" onClick={onDownloadCSV} className="bg-white px-5 py-3 rounded-xl border border-cardBorder text-xs font-black uppercase flex items-center gap-2 shadow-sm"><Download size={16} /> CSV</button><button type="button" onClick={() => window.print()} className="bg-brand-charcoal text-white px-6 py-3 rounded-xl text-xs font-black uppercase flex items-center gap-2 shadow-xl active:scale-95"><Printer size={16} /> Print</button></div></div>
-      <div id="quotation-print-area" className="w-full max-w-[210mm] bg-white px-10 py-10 print:p-0 text-slate-900 border shadow-prof mt-6 quote-container flex flex-col"><div className="flex justify-between items-center border-b-4 border-brand-charcoal pb-4 mb-6"><div className="flex items-center gap-4"><img src={LOGO_URL} className="h-16" /><div><h1 className="text-2xl font-black uppercase tracking-tight">Renowix</h1><p className="text-[10px] uppercase font-bold text-slate-400 tracking-widest">Professional Renovations</p></div></div><div className="text-right"><h2 className="text-3xl font-black text-slate-200 uppercase tracking-widest">Estimate</h2></div></div><div className="grid grid-cols-2 gap-8 mb-10"><div className="bg-slate-50 p-6 border"><h4 className="text-[10px] font-black uppercase text-slate-400 mb-2">CLIENT PROFILE</h4><p className="text-2xl font-black">{client.name}</p><p className="text-sm italic text-slate-500 leading-relaxed">{client.address}</p></div><div className="bg-slate-50 p-6 border"><h4 className="text-[10px] font-black uppercase text-slate-400 mb-2">DETAILS</h4><div className="flex justify-between mb-1"><span className="text-xs font-bold text-slate-400 uppercase">DATE</span><span className="text-xs font-black">{dateStr}</span></div><div className="flex justify-between"><span className="text-xs font-bold text-slate-400 uppercase">REF</span><span className="text-xs font-black">#RX-{Math.floor(Date.now()/10000).toString().slice(-6)}</span></div></div></div>
-        <table className="w-full border-collapse"><thead><tr className="bg-brand-charcoal text-white"><th className="py-4 px-6 text-left text-[11px] uppercase font-black">Scope of Work</th><th className="py-4 px-4 text-right text-[11px] uppercase font-black">Qty</th><th className="py-4 px-6 text-right text-[11px] uppercase font-black">Amount (₹)</th></tr></thead><tbody>{services.map((s, idx) => (<tr key={idx} className="border"><td className="py-5 px-6"><h3 className="font-black text-lg mb-1">{s.name}</h3><p className="text-[10px] text-slate-500 font-medium leading-relaxed">{s.desc}</p></td><td className="py-5 px-4 text-right font-bold">{s.items.reduce((a, b) => a + b.netArea, 0).toFixed(2)} {s.unit}</td><td className="py-5 px-6 text-right font-black">₹{Math.round(s.items.reduce((a, b) => a + b.cost, 0)).toLocaleString()}</td></tr>))}</tbody></table><div className="mt-10 flex flex-col items-end"><div className="bg-brand-charcoal text-white p-6 rounded-2xl w-full max-sm flex justify-between items-center shadow-xl"><span className="font-black text-brand-gold uppercase tracking-widest text-xs">Grand Total</span><span className="text-3xl font-black">₹{Math.round(subTotal).toLocaleString()}</span></div></div><div className="mt-10 pt-10 border-t-2 border-slate-100 flex justify-between items-end pb-10"><div className="w-56 text-center border-t border-slate-300 pt-2 text-[10px] font-black uppercase text-slate-400">Authorized Signature</div><div className="w-56 text-center border-t border-slate-300 pt-2 text-[10px] font-black uppercase text-slate-400">Client Signature</div></div></div></div>
-  );
-}
-
-function MeasurementSheetView({ client, services, onBack }: { client: ClientDetails, services: ActiveService[], onBack: () => void }) {
-  return (
-    <div className="bg-slate-100 min-h-screen flex flex-col items-center overflow-y-auto no-scrollbar"><div className="w-full max-w-[210mm] mt-6 mb-4 flex justify-between no-print px-4"><button type="button" onClick={onBack} className="bg-white px-5 py-3 rounded-xl border border-cardBorder text-xs font-black uppercase flex items-center gap-2 shadow-sm"><ArrowLeft size={16} /> Back</button><button type="button" onClick={() => window.print()} className="bg-brand-charcoal text-white px-6 py-3 rounded-xl text-xs font-black uppercase flex items-center gap-2 shadow-xl"><Printer size={16} /> Print</button></div>
-      <div className="w-full max-w-[210mm] bg-white p-10 print:p-0 shadow-prof mt-6 quote-container"><div className="flex justify-between items-center border-b-2 mb-8 pb-4"><div><h1 className="text-3xl font-black uppercase tracking-tighter">Audit Report</h1><p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em]">{client.name}</p></div><img src={LOGO_URL} className="h-12" /></div>{services.map(s => (<div key={s.instanceId} className="mb-8 break-inside-avoid"><h2 className="bg-slate-100 p-2 font-black mb-4 uppercase text-xs border-l-4 border-brand-gold">{s.name}</h2><table className="w-full text-sm border-collapse"><thead><tr className="border-b"><th className="text-left py-2">Room / Section</th><th className="text-right py-2">Calculation</th><th className="text-right py-2">Net Area</th></tr></thead><tbody>{s.items.map(i => (<tr key={i.id} className="border-b"><td className="py-2 font-bold uppercase text-[11px]">{i.name}</td><td className="py-2 text-right opacity-50 text-[10px]">{i.cabinetSections?.map(c => `(${c.l}x${c.b})x${c.q}`).join(' + ')} {i.walls?.map(w => w.width).join(' + ')}</td><td className="py-2 text-right font-black">{i.netArea.toFixed(2)}</td></tr>))}</tbody></table></div>))}</div></div>
   );
 }

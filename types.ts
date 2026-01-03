@@ -35,6 +35,16 @@ export interface Milestone {
   completedAt?: any;
 }
 
+export interface DailyAttendance {
+  id: string; // YYYY-MM-DD
+  checkIn: any;
+  checkOut?: any;
+  laborPhoto?: string;
+  selfiePhoto?: string;
+  supervisorId: string;
+  supervisorName: string;
+}
+
 export interface MeasurementItem {
   id: string;
   name: string; // Room Name
