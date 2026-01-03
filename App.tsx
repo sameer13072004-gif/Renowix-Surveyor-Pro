@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { GoogleGenAI } from "@google/genai";
 import { 
   ArrowLeft, Plus, Trash2, Edit2, Save, History, Printer, CheckCircle,
@@ -6,12 +6,13 @@ import {
   Monitor, Box, Sparkles, Loader2, Ruler as RulerIcon, 
   AlertTriangle, PlusCircle, LogOut, Eye,
   EyeOff, Settings, ChevronDown, ChevronUp, ArrowUpRight,
-  LogIn, Mail, Lock, ExternalLink, Download
+  LogIn, Mail, Lock, ExternalLink, Download, Users, FileText, LayoutDashboard, UserPlus,
+  PackageSearch, RefreshCw
 } from 'lucide-react';
 
 import { 
   ActiveService, ClientDetails, MeasurementItem, PageView, Project, 
-  Wall, CeilingSection, CabinetSection, Deduction 
+  Wall, CeilingSection, CabinetSection, Deduction, UserProfile 
 } from './types';
 import { SERVICE_DATA, DEFAULT_TERMS } from './constants';
 import { auth, db } from './firebase';
@@ -34,55 +35,90 @@ import {
   updateDoc, 
   deleteDoc, 
   orderBy,
-  serverTimestamp 
+  serverTimestamp,
+  getDocs
 } from 'firebase/firestore';
 import { generateCSV, downloadCSV } from './csvHelper';
 
 const LOGO_URL = "https://renowix.in/wp-content/uploads/2025/12/Picsart_25-12-04_19-18-42-905-scaled.png";
+const ADMIN_EMAIL = "info@renowix.in";
 
 export default function App() {
   const [user, setUser] = useState<FirebaseUser | null>(null);
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [view, setView] = useState<PageView | 'login'>('login');
+  
+  // Data States
   const [surveyorName, setSurveyorName] = useState<string>('');
   const [client, setClient] = useState<ClientDetails>({ name: '', address: '' });
   const [services, setServices] = useState<ActiveService[]>([]);
   const [terms, setTerms] = useState<string>(DEFAULT_TERMS);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [assignedProjects, setAssignedProjects] = useState<Project[]>([]);
+  const [allProjects, setAllProjects] = useState<Project[]>([]); // For Admin
+  const [allSupervisors, setAllSupervisors] = useState<UserProfile[]>([]); // For Admin
+  
+  // Admin Sync Error Tracking
+  const [adminSyncError, setAdminSyncError] = useState<string | null>(null);
+
+  // UI States
   const [tempService, setTempService] = useState<Partial<ActiveService> | null>(null);
   const [editingItemIndex, setEditingItemIndex] = useState<{ sIdx: number; iIdx: number } | null>(null);
-  const [projects, setProjects] = useState<Project[]>([]);
   const [isDirty, setIsDirty] = useState(false);
   const [currentProjectId, setCurrentProjectId] = useState<string | null>(null);
+  const [currentProjectStatus, setCurrentProjectStatus] = useState<'quotation' | 'project'>('quotation');
   const [isEstimateHidden, setIsEstimateHidden] = useState(false);
   const [expandedServices, setExpandedServices] = useState<Record<string, boolean>>({});
-  
-  const [firestoreError, setFirestoreError] = useState<{message: string, link?: string} | null>(null);
   const [saveModal, setSaveModal] = useState<{ show: boolean }>({ show: false });
 
   // Handle Auth State
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
-      setUser(currentUser);
       if (currentUser) {
+        setUser(currentUser);
         try {
-          const profileDoc = await getDoc(doc(db, 'profiles', currentUser.uid));
-          if (profileDoc.exists()) {
-            setSurveyorName(profileDoc.data().name);
+          const profileRef = doc(db, 'profiles', currentUser.uid);
+          const profileDoc = await getDoc(profileRef);
+          
+          let role: 'admin' | 'supervisor' = currentUser.email === ADMIN_EMAIL ? 'admin' : 'supervisor';
+          
+          // Enforce role and profile document for Admin to satisfy Firestore Rules
+          if (role === 'admin') {
+             const adminProfile: UserProfile = {
+                uid: currentUser.uid,
+                email: currentUser.email!,
+                name: 'Administrator',
+                role: 'admin',
+                updatedAt: serverTimestamp()
+             };
+             await setDoc(profileRef, adminProfile, { merge: true });
+             setUserProfile(adminProfile);
+             setSurveyorName('Administrator');
+             setView('admin-dashboard');
+          } else if (profileDoc.exists()) {
+            const data = profileDoc.data() as UserProfile;
+            setUserProfile(data);
+            setSurveyorName(data.name);
             setView('welcome');
           } else {
+            const tempProfile: UserProfile = {
+              uid: currentUser.uid,
+              email: currentUser.email!,
+              name: '',
+              role: 'supervisor',
+              updatedAt: serverTimestamp()
+            };
+            setUserProfile(tempProfile);
             setView('setup');
           }
         } catch (e) {
-          console.error("Profile fetch error:", e);
-          setView('setup');
+          console.error("Profile initialization error:", e);
+          setView('login');
         }
       } else {
-        setSurveyorName('');
-        setClient({ name: '', address: '' });
-        setServices([]);
-        setProjects([]);
-        setCurrentProjectId(null);
-        setIsDirty(false);
+        setUser(null);
+        resetState();
         setView('login');
       }
       setAuthLoading(false);
@@ -90,30 +126,92 @@ export default function App() {
     return unsubscribe;
   }, []);
 
-  // Sync Projects
+  const resetState = () => {
+    setUserProfile(null);
+    setSurveyorName('');
+    setClient({ name: '', address: '' });
+    setServices([]);
+    setProjects([]);
+    setAssignedProjects([]);
+    setAllProjects([]);
+    setAllSupervisors([]);
+    setAdminSyncError(null);
+    setCurrentProjectId(null);
+    setIsDirty(false);
+  };
+
+  // Sync Projects (Supervisor History)
   useEffect(() => {
-    if (!user) return;
-    setFirestoreError(null);
-    let q = query(
+    if (!user || !userProfile || userProfile.role !== 'supervisor') return;
+    
+    const q = query(
       collection(db, 'projects'), 
       where('surveyorId', '==', user.uid),
       orderBy('createdAt', 'desc')
     );
+    const unsub = onSnapshot(q, (snapshot) => {
+      const projs = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id })) as Project[];
+      setProjects(projs);
+    }, (err) => console.error("History sync error:", err));
+    
+    return unsub;
+  }, [user, userProfile]);
 
-    const unsubscribe = onSnapshot(q, 
-      (snapshot) => {
-        const projs = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id })) as Project[];
-        setProjects(projs);
-      },
-      (error) => {
-        if (error.message.includes("requires an index")) {
-          const link = error.message.match(/https:\/\/console\.firebase\.google\.com[^\s]+/);
-          setFirestoreError({ message: "Sort index needed in Firestore.", link: link ? link[0] : undefined });
-        }
-      }
+  // Sync Assigned Projects (Supervisor)
+  useEffect(() => {
+    if (!user || !userProfile || userProfile.role !== 'supervisor') return;
+
+    const q = query(
+      collection(db, 'projects'), 
+      where('assignedTo', '==', user.uid),
+      where('status', '==', 'project'),
+      orderBy('createdAt', 'desc')
     );
-    return unsubscribe;
-  }, [user]);
+    const unsub = onSnapshot(q, (snapshot) => {
+      const projs = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id })) as Project[];
+      setAssignedProjects(projs);
+    }, (err) => console.error("Active tasks sync error:", err));
+
+    return unsub;
+  }, [user, userProfile]);
+
+  // Admin Data Listener Setup (Guarded)
+  const setupAdminListeners = useCallback(() => {
+    if (!user || !userProfile || userProfile.role !== 'admin') return null;
+
+    setAdminSyncError(null);
+    
+    // 1. All Projects for Inbox
+    const qProjects = query(collection(db, 'projects'), orderBy('createdAt', 'desc'));
+    const unsubProjects = onSnapshot(qProjects, (snapshot) => {
+      const fetched = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id })) as Project[];
+      setAllProjects(fetched);
+    }, (error) => {
+      console.error("Quotation Inbox Sync Error:", error);
+      setAdminSyncError("Quotation sync blocked. Check Firestore permissions.");
+    });
+
+    // 2. All Supervisors for User List
+    const qUsers = query(collection(db, 'profiles'), where('role', '==', 'supervisor'));
+    const unsubUsers = onSnapshot(qUsers, (snapshot) => {
+      const fetched = snapshot.docs.map(doc => ({ ...doc.data() })) as UserProfile[];
+      setAllSupervisors(fetched);
+    }, (error) => {
+      console.error("Supervisor List Sync Error:", error);
+      setAdminSyncError("Supervisor list blocked. Check Firestore permissions.");
+    });
+
+    return () => {
+      unsubProjects();
+      unsubUsers();
+    };
+  }, [user, userProfile]);
+
+  // Sync All Data (Admin ONLY)
+  useEffect(() => {
+    const cleanup = setupAdminListeners();
+    return () => { if(cleanup) cleanup(); };
+  }, [setupAdminListeners]);
 
   const toggleExpand = (id: string) => {
     setExpandedServices(prev => ({ ...prev, [id]: !prev[id] }));
@@ -138,6 +236,8 @@ export default function App() {
       services,
       terms,
       surveyorId: user.uid,
+      surveyorName: surveyorName || user.email?.split('@')[0] || 'Unknown',
+      status: currentProjectStatus || 'quotation',
       createdAt: serverTimestamp()
     };
 
@@ -159,12 +259,17 @@ export default function App() {
   const handleUpdateProfile = async () => {
     if (!user || !surveyorName) return;
     try {
-      await setDoc(doc(db, 'profiles', user.uid), {
+      const role = user.email === ADMIN_EMAIL ? 'admin' : 'supervisor';
+      const profileData: UserProfile = {
+        uid: user.uid,
         name: surveyorName,
-        email: user.email,
+        email: user.email!,
+        role: role,
         updatedAt: serverTimestamp()
-      });
-      setView('welcome');
+      };
+      await setDoc(doc(db, 'profiles', user.uid), profileData);
+      setUserProfile(profileData);
+      setView(role === 'admin' ? 'admin-dashboard' : 'welcome');
     } catch (e: any) { alert(e.message); }
   };
 
@@ -173,6 +278,7 @@ export default function App() {
     setServices(p.services);
     setTerms(p.terms || DEFAULT_TERMS);
     setCurrentProjectId(p.id);
+    setCurrentProjectStatus(p.status || 'quotation');
     setIsDirty(false);
     setView('dashboard');
   };
@@ -184,6 +290,7 @@ export default function App() {
   };
 
   const handleAddService = (catId: string, typeId: string, customName?: string, customDesc?: string) => {
+    if (currentProjectStatus === 'project') return alert("Project is locked.");
     const category = SERVICE_DATA[catId];
     if (!category) return;
     const typeDef = category.items.find(i => i.id === typeId);
@@ -206,6 +313,7 @@ export default function App() {
   };
 
   const deleteItem = (sIdx: number, iIdx: number) => {
+    if (currentProjectStatus === 'project') return alert("Project is locked.");
     if (!confirm("Delete this section?")) return;
     const newServices = [...services];
     newServices[sIdx].items.splice(iIdx, 1);
@@ -214,6 +322,7 @@ export default function App() {
   };
 
   const handleSaveMeasurement = (item: MeasurementItem) => {
+    if (currentProjectStatus === 'project') return alert("Project is locked.");
     const sIdx = services.findIndex(s => s.instanceId === tempService?.instanceId);
     if (sIdx === -1) return;
     const newServices = [...services];
@@ -229,6 +338,19 @@ export default function App() {
     setEditingItemIndex(null);
   };
 
+  const handleAdminAssign = async (projId: string, supId: string) => {
+    try {
+      await updateDoc(doc(db, 'projects', projId), {
+        assignedTo: supId,
+        status: 'project',
+        updatedAt: serverTimestamp()
+      });
+      alert("Project converted and assigned successfully.");
+    } catch (e: any) {
+      alert("Error: " + e.message);
+    }
+  };
+
   const handleDownloadCSV = () => {
     if (!currentProjectId) {
       alert("Please save the project to the cloud before downloading CSV.");
@@ -239,7 +361,10 @@ export default function App() {
       date: new Date().toLocaleDateString(),
       client,
       services,
-      terms
+      terms,
+      surveyorId: user?.uid || '',
+      status: currentProjectStatus,
+      createdAt: null
     });
     downloadCSV(content, `Quote_${client.name.replace(/\s+/g, '_')}.csv`);
   };
@@ -253,6 +378,20 @@ export default function App() {
   if (view === 'login') return <AuthView onComplete={() => {}} />;
   if (view === 'quote') return <QuoteView client={client} services={services} terms={terms} onBack={() => setView('dashboard')} onDownloadCSV={handleDownloadCSV} />;
   if (view === 'measurement-sheet') return <MeasurementSheetView client={client} services={services} onBack={() => setView('dashboard')} />;
+
+  if (view === 'admin-dashboard') {
+    return (
+      <AdminDashboard 
+        projects={allProjects} 
+        supervisors={allSupervisors} 
+        syncError={adminSyncError}
+        onSignOut={handleSignOut} 
+        onAssign={handleAdminAssign}
+        onRetrySync={() => setupAdminListeners()}
+        onReview={(p) => { loadProject(p); setView('dashboard'); }}
+      />
+    );
+  }
 
   return (
     <div className="min-h-screen bg-appBg flex flex-col items-center sm:py-6 text-slate-800 font-sans overflow-x-hidden">
@@ -274,16 +413,6 @@ export default function App() {
         )}
 
         <div className="flex-1 overflow-y-auto no-scrollbar bg-appBg">
-          {firestoreError && (
-            <div className="mx-6 mt-4 p-5 bg-yellow-50 border border-brand-gold/20 rounded-2xl flex flex-col gap-3 shadow-sm">
-              <div className="flex items-start gap-3">
-                <AlertTriangle className="text-brand-gold shrink-0 mt-0.5" size={20} />
-                <p className="text-[11px] font-medium text-slate-600 leading-relaxed">{firestoreError.message}</p>
-              </div>
-              {firestoreError.link && <a href={firestoreError.link} target="_blank" className="w-full bg-brand-charcoal text-white py-3 rounded-xl flex items-center justify-center gap-2 text-[10px] font-black uppercase tracking-widest shadow-lg">Fix Index</a>}
-            </div>
-          )}
-
           {view === 'setup' && (
             <div className="flex flex-col items-center justify-center min-h-full p-8 bg-brand-charcoal text-white text-center">
               <img src={LOGO_URL} alt="Renowix" className="h-32 mb-8 object-contain" />
@@ -295,19 +424,28 @@ export default function App() {
 
           {view === 'welcome' && (
             <div className="p-6">
-              <h2 className="text-2xl font-display font-black text-brand-charcoal mb-8">Hello, <span className="text-brand-gold">{surveyorName}</span></h2>
+              <h2 className="text-2xl font-display font-black text-brand-charcoal mb-8">Hello, <span className="text-brand-gold">{surveyorName || user?.email?.split('@')[0]}</span></h2>
               <div className="space-y-4">
-                <button type="button" onClick={() => { setClient({name: '', address: ''}); setServices([]); setCurrentProjectId(null); setView('client-details'); }} className="w-full bg-brand-charcoal text-white p-6 rounded-3xl shadow-xl flex items-center justify-between transition-all active:scale-[0.98]">
+                <button type="button" onClick={() => { setClient({name: '', address: ''}); setServices([]); setCurrentProjectId(null); setCurrentProjectStatus('quotation'); setView('client-details'); }} className="w-full bg-brand-charcoal text-white p-6 rounded-3xl shadow-xl flex items-center justify-between transition-all active:scale-[0.98]">
                   <div className="flex items-center gap-4">
                     <div className="bg-white/10 p-4 rounded-2xl text-brand-gold"><Plus size={28} /></div>
                     <div className="text-left"><h3 className="font-black text-xl">New Quote</h3><p className="text-xs text-slate-400 uppercase font-bold tracking-widest mt-1">Start Survey</p></div>
                   </div>
                   <ChevronRight className="text-brand-gold" />
                 </button>
+                
+                <button type="button" onClick={() => setView('active-projects')} className="w-full bg-brand-gold text-brand-charcoal p-6 rounded-3xl shadow-xl flex items-center justify-between transition-all active:scale-[0.98]">
+                  <div className="flex items-center gap-4">
+                    <div className="bg-brand-charcoal/10 p-4 rounded-2xl text-brand-charcoal"><CheckCircle size={28} /></div>
+                    <div className="text-left"><h3 className="font-black text-xl">Current Projects</h3><p className="text-xs text-brand-charcoal/60 uppercase font-bold tracking-widest mt-1">Assigned Tasks</p></div>
+                  </div>
+                  <ChevronRight className="text-brand-charcoal" />
+                </button>
+
                 <button type="button" onClick={() => setView('history')} className="w-full bg-white border border-cardBorder p-6 rounded-3xl flex items-center justify-between shadow-prof active:scale-[0.98]">
                    <div className="flex items-center gap-4">
                     <div className="bg-slate-100 p-4 rounded-2xl text-slate-600"><History size={28} /></div>
-                    <div className="text-left"><h3 className="font-black text-brand-charcoal text-lg">Project History</h3><p className="text-xs text-slate-400 uppercase font-bold tracking-widest mt-1">Cloud Records</p></div>
+                    <div className="text-left"><h3 className="font-black text-brand-charcoal text-lg">Quotation History</h3><p className="text-xs text-slate-400 uppercase font-bold tracking-widest mt-1">My Records</p></div>
                   </div>
                   <ChevronRight className="text-slate-300" />
                 </button>
@@ -317,8 +455,9 @@ export default function App() {
 
           {view === 'history' && (
             <div className="p-6 pb-24">
-              <Header title="Cloud Records" onBack={() => setView('welcome')} />
+              <Header title="My Quotes" onBack={() => setView('welcome')} />
               <div className="mt-6 space-y-4">
+                {projects.length === 0 && <p className="text-center py-10 text-slate-400 font-bold uppercase text-[10px] tracking-widest">No quotations found</p>}
                 {projects.map((p) => (
                   <div key={p.id} onClick={() => loadProject(p)} className="bg-cardBg rounded-xl p-4 shadow-prof border border-cardBorder hover:bg-slate-50 transition-all relative cursor-pointer group">
                     <button type="button" onClick={async (e) => { e.stopPropagation(); if(confirm("Permanently delete?")) await deleteDoc(doc(db, 'projects', p.id)); }} className="absolute top-3 right-3 p-2 text-brand-red"><Trash2 size={16} /></button>
@@ -327,7 +466,28 @@ export default function App() {
                       <div><h3 className="font-bold text-lg text-brand-charcoal truncate">{p.client.name}</h3><p className="text-xs text-slate-400 flex items-center gap-1 mt-0.5"><MapPin size={10} /> {p.client.address || 'No Address'}</p></div>
                     </div>
                     <div className="flex justify-between items-end">
-                      <span className="text-sm font-medium text-slate-600">{p.date.split(', ')[0]}</span>
+                      <span className="text-xs font-black uppercase text-brand-blue bg-blue-50 px-2 py-1 rounded">Quote</span>
+                      <div className="p-2 bg-appBg text-slate-400 rounded-lg group-hover:bg-brand-gold group-hover:text-brand-charcoal transition-all"><ArrowUpRight size={16} /></div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {view === 'active-projects' && (
+            <div className="p-6 pb-24">
+              <Header title="Assigned Projects" onBack={() => setView('welcome')} />
+              <div className="mt-6 space-y-4">
+                {assignedProjects.length === 0 && <p className="text-center py-10 text-slate-400 font-bold uppercase text-[10px] tracking-widest">No active projects</p>}
+                {assignedProjects.map((p) => (
+                  <div key={p.id} onClick={() => loadProject(p)} className="bg-cardBg rounded-xl p-4 shadow-prof border-2 border-brand-gold/20 hover:border-brand-gold transition-all relative cursor-pointer group">
+                    <div className="flex items-center gap-3 mb-3">
+                      <div className="bg-brand-gold/10 text-brand-gold p-2.5 rounded-lg"><CheckCircle size={20} /></div>
+                      <div><h3 className="font-bold text-lg text-brand-charcoal truncate">{p.client.name}</h3><p className="text-xs text-slate-400 flex items-center gap-1 mt-0.5"><MapPin size={10} /> {p.client.address || 'No Address'}</p></div>
+                    </div>
+                    <div className="flex justify-between items-end">
+                      <span className="text-xs font-black uppercase text-white bg-brand-charcoal px-2 py-1 rounded">Locked Project</span>
                       <div className="p-2 bg-appBg text-slate-400 rounded-lg group-hover:bg-brand-gold group-hover:text-brand-charcoal transition-all"><ArrowUpRight size={16} /></div>
                     </div>
                   </div>
@@ -366,7 +526,15 @@ export default function App() {
                    </button>
                 </div>
               </div>
-              <Header title="Service Items" onBack={() => handleBackNavigation('welcome')} />
+              <Header title={currentProjectStatus === 'project' ? "Project Specs" : "Service Items"} onBack={() => handleBackNavigation('welcome')} />
+              
+              {currentProjectStatus === 'project' && (
+                <div className="mb-6 p-4 bg-yellow-50 border border-brand-gold/20 rounded-xl flex items-center gap-3">
+                  <Lock className="text-brand-gold shrink-0" size={20} />
+                  <p className="text-[11px] font-bold text-slate-600 uppercase">This project is locked by Admin. Changes are not allowed.</p>
+                </div>
+              )}
+
               <div className="mt-4 space-y-6">
                 {services.map((s, sIdx) => {
                   const isExpanded = expandedServices[s.instanceId];
@@ -389,26 +557,34 @@ export default function App() {
                                <div><p className="font-bold text-slate-700 text-sm">{item.name}</p><p className="text-[10px] text-slate-400">₹{item.rate} / {s.unit}</p></div>
                                <div className="flex items-center gap-2">
                                   <span className={`font-bold text-brand-charcoal text-sm ${isEstimateHidden ? 'masked-estimate' : ''}`}>₹{Math.round(item.cost).toLocaleString()}</span>
-                                  <div className="flex gap-1.5 ml-2">
-                                    <button type="button" onClick={() => { setTempService(s); setEditingItemIndex({ sIdx, iIdx }); setView('measure'); }} className="p-1.5 text-brand-blue bg-white border border-cardBorder rounded-lg"><Edit2 size={12} /></button>
-                                    <button type="button" onClick={() => deleteItem(sIdx, iIdx)} className="p-1.5 text-brand-red bg-white border border-cardBorder rounded-lg"><Trash2 size={12} /></button>
-                                  </div>
+                                  {currentProjectStatus === 'quotation' && (
+                                    <div className="flex gap-1.5 ml-2">
+                                      <button type="button" onClick={() => { setTempService(s); setEditingItemIndex({ sIdx, iIdx }); setView('measure'); }} className="p-1.5 text-brand-blue bg-white border border-cardBorder rounded-lg"><Edit2 size={12} /></button>
+                                      <button type="button" onClick={() => deleteItem(sIdx, iIdx)} className="p-1.5 text-brand-red bg-white border border-cardBorder rounded-lg"><Trash2 size={12} /></button>
+                                    </div>
+                                  )}
                                </div>
                             </div>
                           ))}
-                          <button type="button" onClick={() => { setTempService(s); setEditingItemIndex(null); setView('measure'); }} className="w-full py-3 text-[10px] font-black text-brand-gold uppercase tracking-widest">+ Add Section</button>
+                          {currentProjectStatus === 'quotation' && (
+                            <button type="button" onClick={() => { setTempService(s); setEditingItemIndex(null); setView('measure'); }} className="w-full py-3 text-[10px] font-black text-brand-gold uppercase tracking-widest">+ Add Section</button>
+                          )}
                         </div>
                       )}
                     </div>
                   );
                 })}
-                <button type="button" onClick={() => setView('service-select')} className="w-full h-10 border border-cardBorder bg-white text-slate-400 rounded-xl font-bold flex items-center justify-center gap-2 shadow-prof uppercase text-[10px] tracking-widest"><PlusCircle size={14} /> Add Category</button>
+                {currentProjectStatus === 'quotation' && (
+                  <button type="button" onClick={() => setView('service-select')} className="w-full h-10 border border-cardBorder bg-white text-slate-400 rounded-xl font-bold flex items-center justify-center gap-2 shadow-prof uppercase text-[10px] tracking-widest"><PlusCircle size={14} /> Add Category</button>
+                )}
               </div>
               <Footer>
                 <div className="flex gap-2 w-full h-14">
                    <button type="button" onClick={() => setView('measurement-sheet')} className="flex-1 bg-white border border-cardBorder text-slate-800 rounded-xl flex flex-col items-center justify-center gap-1 shadow-sm"><RulerIcon size={18} /><span className="text-[9px] font-black uppercase">Sheet</span></button>
-                   <button type="button" onClick={() => currentProjectId ? setSaveModal({ show: true }) : performSave(false)} className="flex-1 bg-white border border-cardBorder text-slate-800 rounded-xl flex flex-col items-center justify-center gap-1 shadow-sm"><Save size={18} /><span className="text-[9px] font-black uppercase">Sync</span></button>
-                   <button type="button" onClick={() => services.length > 0 ? setView('quote') : alert("No data.")} className="flex-[2.5] bg-brand-charcoal text-white rounded-xl font-black flex items-center justify-center gap-2 shadow-lg"><CheckCircle size={18} className="text-brand-gold" /><span className="text-sm">Generate Quote</span></button>
+                   {currentProjectStatus === 'quotation' && (
+                     <button type="button" onClick={() => currentProjectId ? setSaveModal({ show: true }) : performSave(false)} className="flex-1 bg-white border border-cardBorder text-slate-800 rounded-xl flex flex-col items-center justify-center gap-1 shadow-sm"><Save size={18} /><span className="text-[9px] font-black uppercase">Sync</span></button>
+                   )}
+                   <button type="button" onClick={() => services.length > 0 ? setView('quote') : alert("No data.")} className="flex-[2.5] bg-brand-charcoal text-white rounded-xl font-black flex items-center justify-center gap-2 shadow-lg"><CheckCircle size={18} className="text-brand-gold" /><span className="text-sm">View {currentProjectStatus === 'project' ? 'Project' : 'Quote'}</span></button>
                 </div>
               </Footer>
             </div>
@@ -438,9 +614,185 @@ export default function App() {
   );
 }
 
+// ADMIN DASHBOARD COMPONENT
+function AdminDashboard({ projects, supervisors, syncError, onSignOut, onAssign, onReview, onRetrySync }: { projects: Project[], supervisors: UserProfile[], syncError: string|null, onSignOut: () => void, onAssign: (pid: string, sid: string) => void, onReview: (p: Project) => void, onRetrySync: () => void }) {
+  const [activeTab, setActiveTab] = useState<'quotes' | 'supervisors'>('quotes');
+  const [assignModal, setAssignModal] = useState<Project | null>(null);
+
+  const pendingQuotes = projects.filter(p => p.status === 'quotation' || !p.status);
+  const activeProjects = projects.filter(p => p.status === 'project');
+
+  return (
+    <div className="min-h-screen bg-slate-50 text-slate-800 font-sans">
+      <nav className="bg-brand-charcoal text-white px-8 py-4 flex justify-between items-center shadow-xl sticky top-0 z-[200]">
+        <div className="flex items-center gap-3">
+          <img src={LOGO_URL} className="h-10" alt="Renowix" />
+          <div className="h-6 w-px bg-white/20 mx-2"></div>
+          <span className="font-display font-black text-xl tracking-tight uppercase">Admin Console</span>
+        </div>
+        <div className="flex items-center gap-4">
+           <button onClick={onRetrySync} title="Refresh Sync" className="p-2 bg-white/5 hover:bg-white/10 rounded-xl transition-all border border-white/10 text-brand-gold">
+              <RefreshCw size={20} />
+           </button>
+           <button onClick={onSignOut} className="flex items-center gap-2 bg-white/5 hover:bg-white/10 px-4 py-2 rounded-xl text-sm font-bold transition-all border border-white/10">
+            <LogOut size={16} className="text-brand-gold" /> Sign Out
+          </button>
+        </div>
+      </nav>
+
+      <div className="max-w-7xl mx-auto p-8">
+        {syncError && (
+          <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-2xl flex items-center justify-between text-brand-red">
+            <div className="flex items-center gap-3">
+              <AlertTriangle size={20} />
+              <p className="font-bold text-sm">{syncError}</p>
+            </div>
+            <button onClick={onRetrySync} className="text-xs font-black uppercase tracking-widest bg-brand-red text-white px-4 py-2 rounded-xl shadow-sm">Retry Connection</button>
+          </div>
+        )}
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
+          <StatCard icon={<FileText />} label="Inbox Quotations" value={pendingQuotes.length} color="bg-blue-500" />
+          <StatCard icon={<CheckCircle />} label="Active Projects" value={activeProjects.length} color="bg-brand-gold" />
+          <StatCard icon={<Users />} label="Registered Supervisors" value={supervisors.length} color="bg-slate-700" />
+        </div>
+
+        <div className="flex gap-4 mb-8">
+          <button onClick={() => setActiveTab('quotes')} className={`px-6 py-3 rounded-xl font-black text-sm uppercase tracking-widest flex items-center gap-2 transition-all ${activeTab === 'quotes' ? 'bg-brand-charcoal text-white shadow-lg' : 'bg-white text-slate-400 hover:text-slate-600'}`}>
+            <LayoutDashboard size={18} /> Quotation Inbox
+          </button>
+          <button onClick={() => setActiveTab('supervisors')} className={`px-6 py-3 rounded-xl font-black text-sm uppercase tracking-widest flex items-center gap-2 transition-all ${activeTab === 'supervisors' ? 'bg-brand-charcoal text-white shadow-lg' : 'bg-white text-slate-400 hover:text-slate-600'}`}>
+            <Users size={18} /> Supervisor List
+          </button>
+        </div>
+
+        {activeTab === 'quotes' ? (
+          <div className="bg-white rounded-3xl shadow-prof border border-slate-200 overflow-hidden min-h-[400px]">
+            {projects.length === 0 ? (
+                <div className="py-24 flex flex-col items-center text-slate-300">
+                    <PackageSearch size={64} className="mb-4 opacity-20" />
+                    <p className="font-black uppercase tracking-[0.2em] text-sm">No quotations found in cloud</p>
+                    <p className="text-[10px] mt-2 font-bold text-slate-400 uppercase">Wait for sync or click Refresh</p>
+                </div>
+            ) : (
+                <table className="w-full text-left">
+                <thead>
+                    <tr className="bg-slate-50 border-b border-slate-200">
+                    <th className="px-6 py-4 font-black text-[11px] uppercase text-slate-400 tracking-widest">Client & Date</th>
+                    <th className="px-6 py-4 font-black text-[11px] uppercase text-slate-400 tracking-widest">Surveyor</th>
+                    <th className="px-6 py-4 font-black text-[11px] uppercase text-slate-400 tracking-widest">Total Value</th>
+                    <th className="px-6 py-4 font-black text-[11px] uppercase text-slate-400 tracking-widest">Status</th>
+                    <th className="px-6 py-4 font-black text-[11px] uppercase text-slate-400 tracking-widest text-right">Actions</th>
+                    </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                    {projects.map((p) => (
+                    <tr key={p.id} className="hover:bg-slate-50/50 transition-colors">
+                        <td className="px-6 py-5">
+                        <p className="font-bold text-slate-800">{p.client.name}</p>
+                        <p className="text-xs text-slate-400">{p.date.split(',')[0]}</p>
+                        </td>
+                        <td className="px-6 py-5">
+                        <p className="text-sm font-medium text-slate-600">{p.surveyorName || 'Unknown Surveyor'}</p>
+                        </td>
+                        <td className="px-6 py-5 font-black text-brand-charcoal">
+                        ₹{Math.round(p.services.reduce((s, ser) => s + ser.items.reduce((is, i) => is + i.cost, 0), 0)).toLocaleString()}
+                        </td>
+                        <td className="px-6 py-5">
+                        <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${p.status === 'project' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
+                            {p.status || 'Quotation'}
+                        </span>
+                        </td>
+                        <td className="px-6 py-5 text-right flex items-center justify-end gap-3">
+                        <button onClick={() => onReview(p)} className="p-2 text-slate-400 hover:text-brand-blue transition-colors" title="Review Details"><Eye size={20} /></button>
+                        {p.status !== 'project' && (
+                            <button onClick={() => setAssignModal(p)} className="bg-brand-charcoal text-white px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest hover:bg-slate-800 transition-all shadow-sm">Convert & Assign</button>
+                        )}
+                        </td>
+                    </tr>
+                    ))}
+                </tbody>
+                </table>
+            )}
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {supervisors.length === 0 ? (
+                <div className="col-span-full py-24 flex flex-col items-center text-slate-300">
+                    <Users size={64} className="mb-4 opacity-20" />
+                    <p className="font-black uppercase tracking-[0.2em] text-sm">No registered supervisors yet</p>
+                </div>
+            ) : supervisors.map((s) => (
+              <div key={s.uid} className="bg-white p-6 rounded-3xl shadow-prof border border-slate-200">
+                <div className="flex items-center gap-4 mb-6">
+                  <div className="w-14 h-14 rounded-2xl bg-slate-100 flex items-center justify-center text-slate-600 font-black text-xl">
+                    {(s.name || s.email).charAt(0).toUpperCase()}
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-lg text-brand-charcoal leading-none">{s.name || "Pending Setup"}</h3>
+                    <p className="text-sm text-slate-400 mt-1">{s.email}</p>
+                  </div>
+                </div>
+                <div className="pt-6 border-t border-slate-100 flex justify-between items-center">
+                  <div className="text-center">
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Active Projects</p>
+                    <p className="text-xl font-black text-brand-gold">{projects.filter(p => p.assignedTo === s.uid).length}</p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Quotes Built</p>
+                    <p className="text-xl font-black text-brand-charcoal">{projects.filter(p => p.surveyorId === s.uid).length}</p>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Assignment Modal */}
+      {assignModal && (
+        <div className="fixed inset-0 z-[300] bg-brand-charcoal/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-md rounded-3xl p-8 shadow-2xl">
+            <h3 className="text-2xl font-display font-black text-brand-charcoal mb-2">Convert to Project</h3>
+            <p className="text-slate-500 text-sm mb-6">Assign <span className="font-bold text-slate-800">{assignModal.client.name}</span> to a supervisor.</p>
+            
+            <div className="space-y-3 max-h-64 overflow-y-auto no-scrollbar mb-8">
+              {supervisors.length === 0 ? (
+                  <p className="text-center py-4 text-xs font-bold text-brand-red">No active supervisors to assign</p>
+              ) : supervisors.map(s => (
+                <button key={s.uid} onClick={() => { onAssign(assignModal.id, s.uid); setAssignModal(null); }} className="w-full p-4 flex items-center gap-4 bg-slate-50 hover:bg-brand-gold/10 border border-slate-100 rounded-2xl transition-all text-left group">
+                  <div className="w-10 h-10 rounded-xl bg-white flex items-center justify-center text-slate-400 font-bold group-hover:text-brand-gold shadow-sm">{(s.name || s.email).charAt(0).toUpperCase()}</div>
+                  <div><p className="font-bold text-slate-800 leading-none">{s.name || s.email}</p><p className="text-[10px] text-slate-400 uppercase font-black mt-1">{s.email}</p></div>
+                </button>
+              ))}
+            </div>
+
+            <button onClick={() => setAssignModal(null)} className="w-full py-4 text-xs font-black text-slate-400 uppercase tracking-widest underline">Close</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function StatCard({ icon, label, value, color }: { icon: any, label: string, value: number, color: string }) {
+  return (
+    <div className="bg-white p-6 rounded-3xl shadow-prof border border-slate-200 flex items-center gap-6">
+      <div className={`w-14 h-14 rounded-2xl ${color} text-white flex items-center justify-center shadow-lg shadow-${color}/20`}>
+        {React.cloneElement(icon, { size: 28 })}
+      </div>
+      <div>
+        <p className="text-[11px] font-black text-slate-400 uppercase tracking-widest">{label}</p>
+        <p className="text-3xl font-black text-brand-charcoal leading-none mt-1">{value}</p>
+      </div>
+    </div>
+  );
+}
+
 // Subcomponents
 function AuthView({ onComplete }: { onComplete: () => void }) {
   const [isLogin, setIsLogin] = useState(true);
+  const [isAdminMode, setIsAdminMode] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -451,30 +803,80 @@ function AuthView({ onComplete }: { onComplete: () => void }) {
     setLoading(true);
     setError('');
     try {
-      if (isLogin) await signInWithEmailAndPassword(auth, email, password);
-      else await createUserWithEmailAndPassword(auth, email, password);
+      if (isLogin) {
+        await signInWithEmailAndPassword(auth, email, password);
+      } else {
+        await createUserWithEmailAndPassword(auth, email, password);
+      }
       onComplete();
-    } catch (err: any) { setError(err.message.replace('Firebase: ', '')); }
+    } catch (err: any) { 
+      let msg = err.message.replace('Firebase: ', '');
+      if (msg.includes('auth/invalid-credential') || msg.includes('auth/wrong-password')) msg = "Invalid password. Please check and try again.";
+      if (msg.includes('auth/user-not-found')) msg = "Email not found. If you are a supervisor, click Register.";
+      setError(msg); 
+    }
     finally { setLoading(false); }
   };
+
+  useEffect(() => {
+    if (isAdminMode) {
+      setEmail(ADMIN_EMAIL);
+      setIsLogin(true); // Always login for Admin
+    } else {
+      setEmail('');
+    }
+  }, [isAdminMode]);
 
   return (
     <div className="min-h-screen bg-brand-charcoal flex items-center justify-center p-6">
       <div className="w-full max-w-sm bg-white rounded-3xl p-8 shadow-2xl">
         <div className="text-center mb-8">
           <img src={LOGO_URL} alt="Renowix" className="h-16 mx-auto mb-4 object-contain" />
-          <h2 className="text-2xl font-display font-black text-brand-charcoal">{isLogin ? 'Welcome Back' : 'Create Account'}</h2>
+          <h2 className="text-2xl font-display font-black text-brand-charcoal">
+            {isAdminMode ? 'Admin Access' : (isLogin ? 'Supervisor Login' : 'Supervisor Signup')}
+          </h2>
         </div>
-        {error && <div className="mb-6 p-4 bg-red-50 text-brand-red rounded-xl text-xs font-bold flex items-center gap-2"><AlertTriangle size={14} /> {error}</div>}
+        
+        {error && (
+          <div className="mb-6 p-4 bg-red-50 text-brand-red rounded-xl text-xs font-bold border border-red-100 leading-relaxed">
+            <div className="flex items-center gap-2 mb-1"><AlertTriangle size={14} /> SYSTEM ERROR</div>
+            {error}
+          </div>
+        )}
+        
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="relative"><Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={18} /><input type="email" required className="w-full h-14 pl-12 pr-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none" placeholder="Email" value={email} onChange={e => setEmail(e.target.value)} /></div>
-          <div className="relative"><Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={18} /><input type="password" required className="w-full h-14 pl-12 pr-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none" placeholder="Password" value={password} onChange={e => setPassword(e.target.value)} /></div>
-          <button type="submit" disabled={loading} className="w-full h-14 bg-brand-gold text-brand-charcoal rounded-2xl font-black text-lg hover:bg-yellow-400 transition-all flex items-center justify-center gap-3">
-            {loading ? <Loader2 className="animate-spin" size={24} /> : (isLogin ? <LogIn size={24} /> : <PlusCircle size={24} />)}
-            {isLogin ? 'Sign In' : 'Join Now'}
+          <div className="relative">
+            <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={18} />
+            {isAdminMode ? (
+              <div className="w-full h-14 pl-12 pr-4 bg-slate-100 border border-slate-200 rounded-2xl flex items-center text-slate-500 font-bold">{ADMIN_EMAIL}</div>
+            ) : (
+              <input type="email" required className="w-full h-14 pl-12 pr-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none focus:border-brand-gold transition-colors" placeholder="Email" value={email} onChange={e => setEmail(e.target.value)} />
+            )}
+          </div>
+          <div className="relative">
+            <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={18} />
+            <input type="password" required className="w-full h-14 pl-12 pr-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none focus:border-brand-gold transition-colors" placeholder="Password" value={password} onChange={e => setPassword(e.target.value)} />
+          </div>
+          
+          <button type="submit" disabled={loading} className="w-full h-14 bg-brand-charcoal text-white rounded-2xl font-black text-lg hover:bg-slate-800 transition-all flex items-center justify-center gap-3 shadow-lg active:scale-95 disabled:opacity-50">
+            {loading ? <Loader2 className="animate-spin" size={24} /> : <LogIn size={24} />}
+            {isLogin ? 'Sign In' : 'Register Now'}
           </button>
         </form>
-        <button type="button" onClick={() => setIsLogin(!isLogin)} className="mt-8 w-full text-xs font-bold text-slate-400 uppercase tracking-widest">{isLogin ? "New user? Create an account" : "Have an account? Sign In"}</button>
+
+        <div className="mt-8 flex flex-col gap-3 items-center">
+          {!isAdminMode && (
+              <button type="button" onClick={() => setIsLogin(!isLogin)} className="text-xs font-black text-brand-gold uppercase tracking-widest hover:text-yellow-600 transition-colors">
+                {isLogin ? "Supervisor Signup" : "Back to Login"}
+              </button>
+          )}
+          
+          <div className="h-px w-1/2 bg-slate-100 my-1"></div>
+          
+          <button type="button" onClick={() => { setIsAdminMode(!isAdminMode); }} className="text-[10px] font-black text-slate-400 uppercase tracking-widest underline decoration-2 underline-offset-4 hover:text-brand-charcoal transition-colors">
+            {isAdminMode ? "Switch to Supervisor Mode" : "Admin Console Access"}
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -607,7 +1009,6 @@ function MeasurementForm({ serviceContext, editingItem, onBack, onSave }: { serv
         <Header title={serviceContext.name || "Measurement"} onBack={onBack} />
         <div className="space-y-6 pb-64">
           <div className="bg-cardBg p-3 rounded-xl border border-cardBorder shadow-prof space-y-4">
-             {/* Fixed: Pass the event value to setName instead of the entire event object */}
              <InputGroup label="ROOM LABEL"><input className="w-full h-10 px-3 border border-inputBorder rounded-lg font-bold" value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Master Bedroom" /></InputGroup>
              <div className="grid grid-cols-2 gap-4">
                 <InputGroup label="RATE (₹)"><input type="number" className="w-full h-10 px-3 border border-inputBorder rounded-lg font-black" value={rate || ''} onChange={e => setRate(parseFloat(e.target.value) || 0)} /></InputGroup>
@@ -668,18 +1069,7 @@ function QuoteView({ client, services, terms, onBack, onDownloadCSV }: { client:
         <button type="button" onClick={onBack} className="bg-white px-5 py-3 rounded-xl border border-cardBorder text-xs font-black uppercase flex items-center gap-2 shadow-sm"><ArrowLeft size={16} /> Back</button>
         <div className="flex gap-2">
            <button type="button" onClick={onDownloadCSV} className="bg-white px-5 py-3 rounded-xl border border-cardBorder text-xs font-black uppercase flex items-center gap-2 shadow-sm"><Download size={16} /> CSV</button>
-           <button 
-  type="button" 
-  onClick={(e) => {
-    e.preventDefault(); // Stop any potential form/parent triggers
-    setTimeout(() => {
-      window.print();
-    }, 150); // Small delay to let the DOM settle
-  }} 
-  className="bg-brand-charcoal text-white px-6 py-3 rounded-xl text-xs font-black uppercase flex items-center gap-2 shadow-xl active:scale-95"
->
-  <Printer size={16} /> Print Quote
-</button>
+           <button type="button" onClick={() => window.print()} className="bg-brand-charcoal text-white px-6 py-3 rounded-xl text-xs font-black uppercase flex items-center gap-2 shadow-xl active:scale-95"><Printer size={16} /> Print Quote</button>
         </div>
       </div>
       <div id="quotation-print-area" className="w-full max-w-[210mm] bg-white px-10 py-10 print:p-0 text-slate-900 border shadow-prof mt-6 quote-container flex flex-col">
@@ -732,3 +1122,5 @@ function MeasurementSheetView({ client, services, onBack }: { client: ClientDeta
     </div>
   );
 }
+
+

@@ -1,5 +1,6 @@
 
 export type UnitType = 'sqft' | 'rft' | 'unit';
+export type ProjectStatus = 'quotation' | 'project';
 
 export interface Wall {
   id: string;
@@ -66,7 +67,6 @@ export interface ServiceTypeDef {
   unit?: UnitType;
 }
 
-// The structure for a selected service instance in the project
 export interface ActiveService {
   instanceId: string;
   categoryId: string;
@@ -91,22 +91,30 @@ export interface Project {
   client: ClientDetails;
   services: ActiveService[];
   terms: string;
+  surveyorId: string;
+  status: ProjectStatus;
+  assignedTo?: string; // UID of assigned supervisor
+  surveyorName?: string;
+  createdAt: any;
 }
 
-export interface User {
+export interface UserProfile {
+  uid: string;
   email: string;
   name: string;
-  role: 'admin' | 'surveyor';
-  expiryDate: string; // ISO Date string
+  role: 'admin' | 'supervisor';
+  updatedAt: any;
 }
 
 export type PageView = 
   | 'setup' 
   | 'welcome' 
   | 'history' 
+  | 'active-projects'
   | 'client-details' 
   | 'dashboard' 
   | 'service-select' 
   | 'measure' 
   | 'quote'
-  | 'measurement-sheet';
+  | 'measurement-sheet'
+  | 'admin-dashboard';
