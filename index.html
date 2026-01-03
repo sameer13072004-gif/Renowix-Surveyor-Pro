@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="en">
   <head>
@@ -31,9 +30,9 @@
               inputBorder: '#CED4DA',
               placeholderColor: '#ADB5BD',
               brand: {
-                gold: '#D4AF37', // Professional Gold
-                blue: '#007BFF', // Professional Blue
-                red: '#DC3545',  // Professional Red
+                gold: '#D4AF37',
+                blue: '#007BFF',
+                red: '#DC3545',
                 charcoal: '#1E293B',
               }
             },
@@ -48,77 +47,86 @@
 
     <style>
       @media print {
+        /* Hide non-print elements */
         .no-print { display: none !important; }
         .print-only { display: block !important; }
-        body { background: white; -webkit-print-color-adjust: exact; margin: 0; padding: 0; }
-        @page { size: A4; margin: 0.5cm; }
         
-        tr, .break-inside-avoid {
-          break-inside: avoid;
+        /* Force parent containers to expand and be visible to the print engine */
+        html, body, #root, #root > div { 
+          height: auto !important; 
+          min-height: 0 !important;
+          overflow: visible !important; 
+          display: block !important;
+          position: static !important;
+          margin: 0 !important;
+          padding: 0 !important;
+          background: white !important;
+        }
+
+        body { 
+          -webkit-print-color-adjust: exact !important; 
+          print-color-adjust: exact !important;
+        }
+
+        @page { 
+          size: A4; 
+          margin: 10mm; 
+        }
+
+        /* Ensure the quotation container is correctly captured */
+        .quote-container { 
+          border: none !important; 
+          box-shadow: none !important; 
+          width: 100% !important; 
+          max-width: none !important; 
+          margin: 0 !important; 
+          padding: 0 !important;
+          display: block !important;
+          visibility: visible !important;
+          position: relative !important;
+          overflow: visible !important;
+        }
+
+        .quote-container * {
+          visibility: visible !important;
+        }
+        
+        /* Table and row fixes for multi-page PDF generation */
+        tr, .break-inside-avoid { 
+          break-inside: avoid !important; 
+        }
+        table { 
+          width: 100% !important; 
+          border-collapse: collapse !important; 
         }
       }
       
       .print-only { display: none; }
-
-      input::placeholder {
-        color: #ADB5BD !important;
-      }
-
-      /* Standardize input field sizing for symmetry */
-      input, select, textarea {
-        font-size: 16px !important;
-        border: 1px solid #CED4DA !important;
-      }
-
-      /* Disable swipe to refresh and overscroll bounce */
-      body, html {
-        overscroll-behavior: none;
-        -webkit-overflow-scrolling: touch;
-      }
-
-      .no-scrollbar::-webkit-scrollbar {
-        display: none;
-      }
-      .no-scrollbar {
-        -ms-overflow-style: none;
-        scrollbar-width: none;
-      }
-      
-      .view-transition {
-        transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.2s linear;
-      }
-
-      .masked-estimate {
-        filter: blur(8px);
-        user-select: none;
-        pointer-events: none;
-      }
-
-      /* Sticky footer optimization */
-      .safe-bottom {
-        padding-bottom: env(safe-area-inset-bottom);
-      }
+      input::placeholder { color: #ADB5BD !important; }
+      input, select, textarea { font-size: 16px !important; border: 1px solid #CED4DA !important; }
+      body, html { overscroll-behavior: none; -webkit-overflow-scrolling: touch; }
+      .no-scrollbar::-webkit-scrollbar { display: none; }
+      .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+      .masked-estimate { filter: blur(8px); user-select: none; pointer-events: none; }
+      .safe-bottom { padding-bottom: env(safe-area-inset-bottom); }
     </style>
 
-    <script type="importmap">
+  <script type="importmap">
 {
   "imports": {
-    "lucide-react": "https://esm.sh/lucide-react@^0.561.0",
-    "react/": "https://esm.sh/react@^19.2.3/",
     "react": "https://esm.sh/react@^19.2.3",
     "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
-    "@google/genai": "https://esm.sh/@google/genai@^1.33.0",
-    "firebase/app": "https://www.gstatic.com/firebasejs/11.1.0/firebase-app.js",
-    "firebase/auth": "https://www.gstatic.com/firebasejs/11.1.0/firebase-auth.js",
-    "firebase/firestore": "https://www.gstatic.com/firebasejs/11.1.0/firebase-firestore.js",
-    "firebase/": "https://esm.sh/firebase@^12.7.0/"
+    "react/": "https://esm.sh/react@^19.2.3/",
+    "firebase/": "https://esm.sh/firebase@^12.7.0/",
+    "lucide-react": "https://esm.sh/lucide-react@^0.562.0",
+    "@google/genai": "https://esm.sh/@google/genai@^1.34.0"
   }
 }
 </script>
-  </head>
+</head>
 
   <body class="bg-appBg text-slate-800 antialiased selection:bg-brand-gold selection:text-white overflow-x-hidden">
     <div id="root"></div>
-    <script type="module" src="./index.tsx"></script>
+    <script type="module" src="/index.tsx"></script>
   </body>
 </html>
