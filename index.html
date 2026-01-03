@@ -10,7 +10,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
 
     <!-- Fonts -->
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
 
     <!-- Google Identity Services -->
     <script src="https://accounts.google.com/gsi/client" async defer></script>
@@ -25,19 +25,20 @@
               display: ['Poppins', 'sans-serif'],
             },
             colors: {
-              slate: {
-                800: '#1E293B',
-                850: '#172033',
-                900: '#0F172A',
-              },
+              appBg: '#F8F9FA',
+              cardBg: '#FFFFFF',
+              cardBorder: '#E9ECEF',
+              inputBorder: '#CED4DA',
+              placeholderColor: '#ADB5BD',
               brand: {
-                gold: '#EAB308',
-                goldLight: '#FEF08A',
-                black: '#1e293b',
+                gold: '#D4AF37', // Professional Gold
+                blue: '#007BFF', // Professional Blue
+                red: '#DC3545',  // Professional Red
+                charcoal: '#1E293B',
               }
             },
             boxShadow: {
-              soft: '0 4px 20px -2px rgba(0, 0, 0, 0.05)',
+              prof: '0 4px 6px rgba(0, 0, 0, 0.05)',
               card: '0 0 0 1px rgba(0,0,0,0.03), 0 2px 8px rgba(0,0,0,0.04)',
             }
           }
@@ -59,9 +60,14 @@
       
       .print-only { display: none; }
 
+      input::placeholder {
+        color: #ADB5BD !important;
+      }
+
       /* Standardize input field sizing for symmetry */
       input, select, textarea {
         font-size: 16px !important;
+        border: 1px solid #CED4DA !important;
       }
 
       /* Disable swipe to refresh and overscroll bounce */
@@ -95,19 +101,23 @@
     </style>
 
     <script type="importmap">
-    {
-      "imports": {
-        "lucide-react": "https://esm.sh/lucide-react@^0.561.0",
-        "react/": "https://esm.sh/react@^19.2.3/",
-        "react": "https://esm.sh/react@^19.2.3",
-        "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
-        "@google/genai": "https://esm.sh/@google/genai@^1.33.0"
-      }
-    }
-    </script>
+{
+  "imports": {
+    "lucide-react": "https://esm.sh/lucide-react@^0.561.0",
+    "react/": "https://esm.sh/react@^19.2.3/",
+    "react": "https://esm.sh/react@^19.2.3",
+    "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
+    "@google/genai": "https://esm.sh/@google/genai@^1.33.0",
+    "firebase/app": "https://www.gstatic.com/firebasejs/11.1.0/firebase-app.js",
+    "firebase/auth": "https://www.gstatic.com/firebasejs/11.1.0/firebase-auth.js",
+    "firebase/firestore": "https://www.gstatic.com/firebasejs/11.1.0/firebase-firestore.js",
+    "firebase/": "https://esm.sh/firebase@^12.7.0/"
+  }
+}
+</script>
   </head>
 
-  <body class="bg-gray-100 text-slate-800 antialiased selection:bg-brand-gold selection:text-white overflow-x-hidden">
+  <body class="bg-appBg text-slate-800 antialiased selection:bg-brand-gold selection:text-white overflow-x-hidden">
     <div id="root"></div>
     <script type="module" src="./index.tsx"></script>
   </body>
