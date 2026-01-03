@@ -28,6 +28,13 @@ export interface Deduction {
   qty: number;
 }
 
+export interface Milestone {
+  id: string;
+  name: string;
+  status: 'pending' | 'completed';
+  completedAt?: any;
+}
+
 export interface MeasurementItem {
   id: string;
   name: string; // Room Name
@@ -96,6 +103,7 @@ export interface Project {
   assignedTo?: string; // UID of assigned supervisor
   surveyorName?: string;
   createdAt: any;
+  milestones?: Milestone[];
 }
 
 export interface UserProfile {
