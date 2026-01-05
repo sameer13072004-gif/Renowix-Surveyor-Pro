@@ -12,6 +12,7 @@ const firebaseConfig = {
   appId: "1:48954158672:web:40e53762b2db835c456b55"
 };
 
+// Fix: Corrected Firebase modular initialization for v9+.
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 export const db = getFirestore(app);

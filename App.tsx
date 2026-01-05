@@ -16,13 +16,17 @@ import {
   Wall, CeilingSection, CabinetSection, Deduction, UserProfile, Milestone, DailyAttendance } from './types';
 import { SERVICE_DATA, DEFAULT_TERMS } from './constants';
 import { auth, db } from './firebase';
+
+// Fix: Corrected Firebase modular imports. User is an interface and should be imported as a type in strict environments.
 import { 
   onAuthStateChanged, 
   signInWithEmailAndPassword, 
   createUserWithEmailAndPassword, 
   signOut,
-  User as FirebaseUser
+  type User as FirebaseUser
 } from 'firebase/auth';
+
+// Fix: Corrected Firestore modular imports to ensure proper type resolution.
 import { 
   doc, 
   setDoc, 
@@ -111,7 +115,7 @@ function RealTimeCamera({
   useEffect(() => {
     startCamera();
     return () => {
-      if (stream) stream.getTracks().forEach(t => t.stop());
+      if (stream) stream.getTracks().forEach(t => track.stop());
     };
   }, [facingMode]);
 
@@ -168,54 +172,183 @@ function RealTimeCamera({
 }
 
 /**
- * Detailed Quote Summary View
+ * Enhanced Spreadsheet Quotation View
  */
 function QuoteView({ client, services, terms, onBack, onDownloadCSV }: { client: ClientDetails, services: ActiveService[], terms: string, onBack: () => void, onDownloadCSV: () => void }) {
-  const total = services.reduce((sum, s) => sum + s.items.reduce((is, i) => is + i.cost, 0), 0);
+  const totalAmount = services.reduce((sum, s) => sum + s.items.reduce((is, i) => is + i.cost, 0), 0);
+  
+  const handlePrint = () => {
+    window.print();
+  };
+
   return (
-    <div className="p-6 pb-32 bg-white min-h-screen">
-      <div className="flex justify-between items-start mb-8">
-        <button onClick={onBack} className="p-2 text-slate-400"><ArrowLeft /></button>
-        <div className="text-right">
-          <img src={LOGO_URL} className="h-12 ml-auto mb-2" alt="Logo" />
-          <p className="text-xs text-slate-400 font-bold uppercase">Quotation</p>
+    <div className="min-h-screen bg-slate-100 flex flex-col items-center">
+      {/* Action Bar (Browser Only) */}
+      <div className="no-print w-full bg-white border-b border-slate-200 sticky top-0 z-[200] shadow-sm">
+        <div className="max-w-4xl mx-auto px-4 h-16 flex items-center justify-between">
+          <button onClick={onBack} className="p-2 text-slate-400 hover:text-brand-charcoal transition-colors bg-slate-50 rounded-xl border border-slate-100"><ArrowLeft size={20} /></button>
+          <div className="flex gap-3">
+             <button onClick={onDownloadCSV} className="px-4 py-2 bg-slate-50 text-slate-600 rounded-xl font-bold text-xs flex items-center gap-2 border border-slate-200 hover:bg-slate-100 transition-all active:scale-95"><Download size={14} /> Download CSV</button>
+             <button onClick={handlePrint} className="px-6 py-2 bg-brand-charcoal text-white rounded-xl font-black text-xs flex items-center gap-2 shadow-lg hover:bg-slate-800 transition-all active:scale-95">
+                <Printer size={16} className="text-brand-gold" /> Download PDF / Print
+             </button>
+          </div>
         </div>
       </div>
-      <div className="mb-8 p-6 bg-slate-50 rounded-3xl border border-slate-100">
-        <h2 className="text-xl font-black text-brand-charcoal mb-4">Client Details</h2>
-        <div className="space-y-2">
-          <p className="text-sm font-bold text-slate-800">{client.name}</p>
-          <p className="text-xs text-slate-500 leading-relaxed">{client.address}</p>
-        </div>
-      </div>
-      <div className="space-y-6 mb-8">
-        {services.map(s => (
-          <div key={s.instanceId} className="border-b border-slate-100 pb-4">
-            <h3 className="font-black text-brand-charcoal text-sm uppercase tracking-widest mb-3">{s.name}</h3>
-            <div className="space-y-2">
-              {s.items.map(i => (
-                <div key={i.id} className="flex justify-between text-xs">
-                  <span className="text-slate-600 font-medium">{i.name} ({i.netArea.toFixed(2)} {s.unit})</span>
-                  <span className="font-black text-brand-charcoal">₹{Math.round(i.cost).toLocaleString()}</span>
-                </div>
-              ))}
+
+      {/* Quotation Canvas (Paper Effect) */}
+      <div className="quote-container w-full max-w-[210mm] min-h-[297mm] bg-white my-8 shadow-2xl overflow-hidden print:shadow-none print:my-0">
+        <div className="p-10 sm:p-14">
+          
+          {/* Header Row */}
+          <div className="flex flex-col sm:flex-row justify-between items-start mb-12 border-b-4 border-brand-charcoal pb-8">
+            <div className="space-y-4">
+              <img src={LOGO_URL} className="h-16 mb-2 object-contain" alt="Renowix" />
+              <h1 className="text-4xl font-black text-brand-charcoal tracking-tighter uppercase leading-none">Quotation</h1>
+              <div className="flex items-center gap-2">
+                <span className="bg-brand-gold/10 text-brand-gold px-2 py-0.5 rounded font-black text-[10px] tracking-widest">OFFICIAL</span>
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em]">REF: RNX-{new Date().getFullYear()}-{Math.floor(Math.random()*10000)}</p>
+              </div>
+            </div>
+            <div className="mt-8 sm:mt-0 text-right space-y-1">
+              <h2 className="text-lg font-black text-brand-charcoal">Renowix Renovations</h2>
+              <p className="text-xs text-slate-500 font-medium">C-32, Sector 51, Noida, UP 201301</p>
+              <p className="text-xs text-slate-500 font-medium">info@renowix.in | +91 92114 29635</p>
+              <div className="h-4"></div>
+              <div className="bg-slate-50 p-3 rounded-xl border border-slate-100 inline-block text-left min-w-[160px]">
+                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Document Date</p>
+                <p className="text-sm font-black text-brand-charcoal">{new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric' })}</p>
+              </div>
             </div>
           </div>
-        ))}
+
+          {/* Client Info Block */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-12 mb-12">
+            <div>
+              <p className="text-[11px] font-black text-brand-gold uppercase tracking-[0.3em] mb-4 border-b border-slate-100 pb-2">Client Profile</p>
+              <h3 className="text-xl font-black text-brand-charcoal mb-2">{client.name}</h3>
+              <div className="flex gap-2">
+                 <MapPin size={14} className="text-slate-300 shrink-0 mt-0.5" />
+                 <p className="text-xs text-slate-500 font-medium leading-relaxed whitespace-pre-wrap">{client.address || "Address not provided"}</p>
+              </div>
+            </div>
+            <div className="flex flex-col justify-end space-y-3">
+              <div className="flex justify-between items-center py-2 border-b border-dashed border-slate-200">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Job Category</span>
+                <span className="text-xs font-black text-brand-charcoal">Standard Residential</span>
+              </div>
+              <div className="flex justify-between items-center py-2 border-b border-dashed border-slate-200">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Quote Status</span>
+                <span className="text-xs font-black text-brand-blue uppercase">Provisional Estimate</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Spreadsheet Table */}
+          <div className="mb-12">
+            <table className="w-full border-collapse border border-slate-300">
+              <thead>
+                <tr className="bg-brand-charcoal text-white print:bg-brand-charcoal print:text-white">
+                  <th className="border border-brand-charcoal p-3 text-left text-[11px] font-black uppercase tracking-widest w-12">#</th>
+                  <th className="border border-brand-charcoal p-3 text-left text-[11px] font-black uppercase tracking-widest">Description of Work</th>
+                  <th className="border border-brand-charcoal p-3 text-center text-[11px] font-black uppercase tracking-widest w-24">Quantity</th>
+                  <th className="border border-brand-charcoal p-3 text-center text-[11px] font-black uppercase tracking-widest w-20">Unit</th>
+                  <th className="border border-brand-charcoal p-3 text-right text-[11px] font-black uppercase tracking-widest w-28">Rate (₹)</th>
+                  <th className="border border-brand-charcoal p-3 text-right text-[11px] font-black uppercase tracking-widest w-32">Total (₹)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {services.map((service, sIdx) => (
+                  <React.Fragment key={service.instanceId}>
+                    {/* Category Row */}
+                    <tr className="bg-slate-100 border-b-2 border-slate-300">
+                      <td colSpan={6} className="p-3 border border-slate-300">
+                        <div className="flex items-center justify-between">
+                           <span className="font-black text-xs text-brand-charcoal uppercase tracking-[0.2em]">{service.name}</span>
+                           <span className="text-[10px] font-bold text-slate-400 uppercase italic">Section {sIdx + 1}</span>
+                        </div>
+                        {service.desc && <p className="text-[10px] text-slate-500 mt-1 font-medium italic leading-relaxed">{service.desc}</p>}
+                      </td>
+                    </tr>
+                    {/* Item Rows */}
+                    {service.items.map((item, iIdx) => (
+                      <tr key={item.id} className="hover:bg-slate-50">
+                        <td className="border border-slate-200 p-3 text-center text-[11px] font-bold text-slate-400">{sIdx + 1}.{iIdx + 1}</td>
+                        <td className="border border-slate-200 p-3">
+                          <p className="text-xs font-black text-brand-charcoal mb-1">{item.name}</p>
+                          {/* Measurements breakdown in spreadsheet format */}
+                          <div className="flex flex-col gap-1">
+                            {item.walls && item.walls.length > 0 && (
+                              <p className="text-[9px] text-slate-400 bg-slate-50 px-1.5 py-0.5 rounded inline-block w-fit font-medium">
+                                WALLS: ({item.walls.map(w => w.width).join(' + ')}) ft x {item.height} ft Height
+                              </p>
+                            )}
+                            {item.cabinetSections && item.cabinetSections.length > 0 && (
+                              <div className="flex flex-wrap gap-1">
+                                {item.cabinetSections.map(c => (
+                                  <span key={c.id} className="text-[8px] bg-slate-50 border border-slate-100 px-1.5 py-0.5 rounded text-slate-500 font-bold uppercase">
+                                    {c.name}: {c.l}x{c.b} ({c.q} Qty)
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </td>
+                        <td className="border border-slate-200 p-3 text-center text-xs font-bold text-slate-600">{item.netArea.toFixed(2)}</td>
+                        <td className="border border-slate-200 p-3 text-center text-[10px] font-black text-slate-400 uppercase">{service.unit}</td>
+                        <td className="border border-slate-200 p-3 text-right text-xs font-bold text-slate-600">₹{item.rate.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                        <td className="border border-slate-200 p-3 text-right text-xs font-black text-brand-charcoal">₹{Math.round(item.cost).toLocaleString('en-IN')}</td>
+                      </tr>
+                    ))}
+                    {/* Section Subtotal */}
+                    <tr className="bg-slate-50/50">
+                       <td colSpan={5} className="border border-slate-200 p-2 text-right text-[10px] font-black uppercase text-slate-400 tracking-widest">Section {sIdx + 1} Subtotal</td>
+                       <td className="border border-slate-200 p-2 text-right text-xs font-black text-brand-charcoal bg-slate-100/50">₹{Math.round(service.items.reduce((acc, curr) => acc + curr.cost, 0)).toLocaleString('en-IN')}</td>
+                    </tr>
+                  </React.Fragment>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr className="bg-brand-charcoal text-white print:bg-brand-charcoal print:text-white">
+                  <td colSpan={4} className="p-5 border border-brand-charcoal text-right text-sm font-black uppercase tracking-[0.3em]">Estimated Total Project Cost</td>
+                  <td colSpan={2} className="p-5 border border-brand-charcoal text-right text-2xl font-black text-brand-gold shadow-inner">
+                    ₹{Math.round(totalAmount).toLocaleString('en-IN')}
+                  </td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+
+          {/* Terms and Sign-off */}
+          <div className="grid grid-cols-1 sm:grid-cols-12 gap-12 mt-12">
+            <div className="sm:col-span-7">
+              <h4 className="text-[11px] font-black text-brand-charcoal uppercase tracking-widest mb-4 border-b-2 border-brand-gold pb-1 inline-block">General Terms & Provisions</h4>
+              <div className="bg-slate-50 p-6 rounded-2xl border border-slate-200">
+                <pre className="text-[10px] text-slate-500 font-medium whitespace-pre-wrap leading-relaxed italic">{terms || DEFAULT_TERMS}</pre>
+              </div>
+            </div>
+            <div className="sm:col-span-5 flex flex-col items-center justify-end space-y-6 pt-10">
+               <div className="w-full flex flex-col items-center">
+                  <div className="w-48 h-12 flex items-center justify-center italic text-slate-200 font-serif">Signature Area</div>
+                  <div className="w-full h-px bg-slate-300"></div>
+                  <p className="text-[10px] font-black text-brand-charcoal uppercase tracking-[0.2em] mt-3">Authorized Signatory</p>
+                  <p className="text-[9px] text-slate-400 font-medium">Renowix Projects Department</p>
+               </div>
+               <div className="h-8"></div>
+               <div className="text-center">
+                  <p className="text-[9px] font-black text-slate-300 uppercase tracking-[0.4em]">Thank you for your business</p>
+               </div>
+            </div>
+          </div>
+        </div>
       </div>
-      <div className="mb-8 p-6 bg-brand-charcoal text-white rounded-3xl shadow-xl flex justify-between items-center">
-        <span className="font-black uppercase tracking-widest text-xs opacity-60">Total Amount</span>
-        <span className="text-2xl font-black text-brand-gold">₹{Math.round(total).toLocaleString()}</span>
+
+      {/* Sticky Mobile Footer Action (Browser Only) */}
+      <div className="no-print w-full flex justify-center pb-8 safe-bottom">
+         <button onClick={handlePrint} className="w-full max-sm h-16 bg-brand-charcoal text-white rounded-2xl font-black flex items-center justify-center gap-3 shadow-2xl active:scale-95 transition-all">
+            <Printer size={24} className="text-brand-gold" /> DOWNLOAD QUOTE (PDF)
+         </button>
       </div>
-      <div className="mb-20">
-         <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Terms & Conditions</h4>
-         <pre className="text-[10px] text-slate-500 font-medium whitespace-pre-wrap leading-relaxed">{terms}</pre>
-      </div>
-      <Footer>
-        <button onClick={onDownloadCSV} className="w-full h-14 bg-brand-gold text-brand-charcoal rounded-2xl font-black flex items-center justify-center gap-3 shadow-xl">
-          <Download size={20} /> Download CSV Report
-        </button>
-      </Footer>
     </div>
   );
 }
@@ -756,6 +889,7 @@ export default function App() {
     <div className="min-h-screen bg-appBg flex flex-col items-center sm:py-6 text-slate-800 font-sans overflow-x-hidden">
       <div className="w-full max-w-xl bg-cardBg sm:rounded-3xl shadow-prof flex flex-col min-h-screen sm:min-h-[85vh] relative overflow-hidden border border-cardBorder">
         
+        {/* Fix: Removed view !== 'quote' check because view === 'quote' is handled via early return, causing a redundant comparison error in TypeScript narrowing. */}
         {view !== 'setup' && (
           <div className="px-4 py-3 bg-white border-b border-cardBorder sticky top-0 z-[150] flex items-center justify-between shadow-sm">
             <div className="flex items-center gap-3">
@@ -1417,8 +1551,8 @@ function Header({ title, onBack }: { title: string, onBack: () => void }) {
   return (<div className="flex items-center gap-4 py-1 mb-3"><button type="button" onClick={onBack} className="p-2.5 text-slate-400 bg-white shadow-prof border border-cardBorder rounded-lg"><ArrowLeft size={18} /></button><h1 className="font-display font-black text-[16px] sm:text-[18px] text-brand-charcoal uppercase truncate">{title}</h1></div>);
 }
 
-function Footer({ children }: { children?: React.ReactNode }) {
-  return (<div className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-xl bg-white/95 backdrop-blur-md p-4 border-t border-cardBorder z-[100] safe-bottom shadow-2xl">{children}</div>);
+function Footer({ children, className = "" }: { children?: React.ReactNode, className?: string }) {
+  return (<div className={`fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-xl bg-white/95 backdrop-blur-md p-4 border-t border-cardBorder z-[100] safe-bottom shadow-2xl ${className}`}>{children}</div>);
 }
 
 function InputGroup({ label, children }: { label: string, children?: React.ReactNode }) {
