@@ -45,6 +45,15 @@ export interface DailyAttendance {
   supervisorName: string;
 }
 
+// Added UserProfile interface to resolve import error in App.tsx
+export interface UserProfile {
+  uid: string;
+  email: string;
+  name: string;
+  role: 'admin' | 'supervisor';
+  updatedAt: any;
+}
+
 export interface MeasurementItem {
   id: string;
   name: string; // Room Name
@@ -64,6 +73,13 @@ export interface MeasurementItem {
   l?: number;
   b?: number;
   q?: number;
+  
+  // Audit & Diagnostic Fields
+  inspectionNotes?: string;
+  hasSeepage?: boolean;
+  moisturePercentage?: number;
+  totalElectricalPoints?: number;
+  faultyElectricalPoints?: number;
   
   remarks?: string;
 }
@@ -116,14 +132,6 @@ export interface Project {
   milestones?: Milestone[];
 }
 
-export interface UserProfile {
-  uid: string;
-  email: string;
-  name: string;
-  role: 'admin' | 'supervisor';
-  updatedAt: any;
-}
-
 export type PageView = 
   | 'setup' 
   | 'welcome' 
@@ -134,5 +142,5 @@ export type PageView =
   | 'service-select' 
   | 'measure' 
   | 'quote'
-  | 'measurement-sheet'
+  | 'diagnostic-report'
   | 'admin-dashboard';
